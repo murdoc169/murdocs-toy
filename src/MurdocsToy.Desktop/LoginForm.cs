@@ -50,13 +50,13 @@ sealed class LoginForm : Form
 
     readonly LoginStore.Saved _saved = LoginStore.Load();
     readonly TextBox _user = Field(), _pass = Field(true), _key = Field();
-    readonly InterfacePicker _ui = new() { Dock = DockStyle.Top };
+    readonly InterfacePicker _ui = new() { Dock = DockStyle.Top, Visible = false };   // deprecated: the Modern views are no longer offered here
     readonly CheckBox _remember = new() { Text = "Remember me", AutoSize = false, Height = 28, Dock = DockStyle.Top, ForeColor = Muted, Font = new Font("Segoe UI", 9f) };
     readonly Label _status = new() { AutoSize = false, Height = 22, ForeColor = Muted, Font = new Font("Segoe UI", 9f), Dock = DockStyle.Top };
     readonly Button _ok = new() { Text = "Log in", Height = 38, Dock = DockStyle.Top, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 10.5f), ForeColor = Color.White, BackColor = Color.FromArgb(44, 120, 84), Cursor = Cursors.Hand };
     readonly bool _autoLogin;
     public BetfairClient? Client { get; private set; }
-    public string Ui => _ui.Value;
+    public string Ui => _ui.Value;      // whatever was asked for on the command line; Classic by default
 
     static TextBox Field(bool password = false) => new()
     {
@@ -79,7 +79,7 @@ sealed class LoginForm : Form
         Text = "Murdoc's Toy";
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(380, 456);
+        ClientSize = new Size(380, 372);
         BackColor = Back; ForeColor = Color.White; Font = new Font("Segoe UI", 9f);
         Theme.TitleBar(this, Back, Color.White);
 
@@ -91,8 +91,7 @@ sealed class LoginForm : Form
         // docked Top: the last control added sits at the top
         var body = new Panel { Dock = DockStyle.Fill, Padding = new Padding(32, 28, 32, 16), BackColor = Back };
         body.Controls.Add(_ok); body.Controls.Add(Gap(6)); body.Controls.Add(_status); body.Controls.Add(_remember);
-        body.Controls.Add(Gap(8)); body.Controls.Add(_ui); body.Controls.Add(Caption("Interface"));
-        body.Controls.Add(_key); body.Controls.Add(Caption("App key"));
+                body.Controls.Add(_key); body.Controls.Add(Caption("App key"));
         body.Controls.Add(_pass); body.Controls.Add(Caption("Password"));
         body.Controls.Add(_user); body.Controls.Add(Caption("Username"));
         body.Controls.Add(Gap(14)); body.Controls.Add(sub); body.Controls.Add(title);

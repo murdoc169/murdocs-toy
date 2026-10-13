@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>MurdocsToy</AssemblyName>
-    <Version>0.5.1</Version>
+    <Version>0.5.2</Version>
     <Product>Murdoc's Toy</Product>
     <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>

@@ -2,7 +2,7 @@ using MurdocsToy.Core;
 
 namespace MurdocsToy.Desktop;
 
-/// <summary>The Modern main window: tree explorer on the left, selected market on the right.</summary>
+/// <summary>DEPRECATED (kept, not offered; start with --ui=dark|light). The Modern main window: tree explorer on the left, selected market on the right.</summary>
 sealed class MainForm : Form
 {
     readonly AppHost _host;

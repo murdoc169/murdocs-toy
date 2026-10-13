@@ -4,7 +4,7 @@ using MurdocsToy.Core;
 namespace MurdocsToy.Desktop;
 
 /// <summary>
-/// DEPRECATED (kept for now, no new features; Modern is the default). Classic trading window for one market: a ladder per runner side by side, and the slate tools panel on the right
+/// Classic trading window for one market: a ladder per runner side by side, and the slate tools panel on the right
 /// (clock and book percentages, back/lay staking, bet persistence, market information, ladder selector).
 /// </summary>
 sealed partial class ClassicLadderForm : Form

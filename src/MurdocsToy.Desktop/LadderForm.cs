@@ -2,7 +2,7 @@ using MurdocsToy.Core;
 
 namespace MurdocsToy.Desktop;
 
-/// <summary>Pop-up trading window for one market: a ladder per runner side by side, one-click betting, stake buttons.</summary>
+/// <summary>DEPRECATED (kept, not offered). Pop-up trading window for one market: a ladder per runner side by side, one-click betting, stake buttons.</summary>
 sealed class LadderForm : Form
 {
     readonly BetfairClient _bf;

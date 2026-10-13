@@ -15,7 +15,7 @@ static class Program
         bool auto = args.Contains("--smoke") || args.Contains("--autologin");
         string ui = (args.FirstOrDefault(a => a.StartsWith("--ui="))?[5..]) switch
         {
-            "classic" => Ui.Classic, "light" => Ui.ModernLight, "dark" => Ui.ModernDark, _ => LoginStore.Load().Ui ?? Ui.ModernDark,
+            "classic" => Ui.Classic, "light" => Ui.ModernLight, "dark" => Ui.ModernDark, _ => Ui.Classic,
         };
         Theme.Dark = ui == Ui.ModernDark;
         using var login = new LoginForm(auto, ui, args.Contains("--show-login"));
@@ -46,12 +46,6 @@ static class LoginStore
         try
         {
             var s = JsonSerializer.Deserialize<Saved>(File.ReadAllText(PathFile)) ?? new(null, null, null);
-            // Classic was the default and is now deprecated: move a saved Classic choice to Modern once. Choosing Classic again sticks.
-            if (!s.ClassicMigrated)
-            {
-                s = s with { ClassicMigrated = true, Ui = s.Ui == Ui_.Classic ? Ui_.ModernDark : s.Ui };
-                try { File.WriteAllText(PathFile, JsonSerializer.Serialize(s)); } catch { }
-            }
             return s;
         }
         catch { return new(null, null, null, ClassicMigrated: true); }

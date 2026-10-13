@@ -2,12 +2,12 @@ using System.Runtime.InteropServices;
 
 namespace MurdocsToy.Desktop;
 
-/// <summary>User interface choices offered at login. Classic is DEPRECATED: it is kept (and still works) but gets no new features and is not the default.</summary>
+/// <summary>The interfaces. Classic is THE interface. The two Modern ones are DEPRECATED: kept (and still working) but not offered at login; start with --ui=dark or --ui=light to use them.</summary>
 public static class Ui
 {
     public const string ModernDark = "ModernDark", ModernLight = "ModernLight", Classic = "Classic";
     public static readonly string[] All = { ModernDark, ModernLight, Classic };
-    public static string Label(string ui) => ui switch { ModernLight => "Modern (light)", Classic => "Classic (deprecated)", _ => "Modern (dark)" };
+    public static string Label(string ui) => ui switch { ModernLight => "Modern light (deprecated)", Classic => "Classic", _ => "Modern dark (deprecated)" };
     public static string FromLabel(string label) => All.FirstOrDefault(u => Label(u) == label) ?? ModernDark;
 }
 
