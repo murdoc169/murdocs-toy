@@ -45,8 +45,8 @@ export class Betfair {
     return r.map(x => ({ id: x.eventType.id, name: x.eventType.name })).sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  markets({ eventTypeId, text, inPlay, marketType, max = 100 }) {
-    const filter = { marketStartTime: { from: new Date(Date.now() - 3 * 3600e3).toISOString() } };
+  markets({ eventTypeId, text, inPlay, marketType, marketIds, max = 100 }) {
+    const filter = marketIds ? { marketIds } : { marketStartTime: { from: new Date(Date.now() - 3 * 3600e3).toISOString() } };
     if (eventTypeId) filter.eventTypeIds = [eventTypeId];
     if (text) filter.textQuery = text;
     if (inPlay) filter.inPlayOnly = true;
@@ -56,15 +56,43 @@ export class Betfair {
     });
   }
 
+  #treeFilter({ eventTypeId, inPlay, competitionId, text }) {
+    const f = { eventTypeIds: [eventTypeId], marketStartTime: { from: new Date(Date.now() - 3 * 3600e3).toISOString(), to: new Date(Date.now() + 2 * 86400e3).toISOString() } };
+    if (inPlay) f.inPlayOnly = true;
+    if (competitionId) f.competitionIds = [competitionId];
+    if (text) f.textQuery = text;
+    return f;
+  }
+
+  async competitions(p) {
+    const r = await this.#bet('listCompetitions', { filter: this.#treeFilter(p) });
+    return r.map(x => ({ id: x.competition.id, name: x.competition.name, region: x.competitionRegion, marketCount: x.marketCount }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async events(p) {
+    const r = await this.#bet('listEvents', { filter: this.#treeFilter(p) });
+    return r.map(x => ({ id: x.event.id, name: x.event.name, openDate: x.event.openDate, marketCount: x.marketCount }))
+      .sort((a, b) => (a.openDate ?? '').localeCompare(b.openDate ?? '') || a.name.localeCompare(b.name));
+  }
+
+  /** All markets of one match, Match Odds first. */
+  async eventMarkets(eventId) {
+    const r = await this.#bet('listMarketCatalogue', {
+      filter: { eventIds: [eventId] }, marketProjection: ['EVENT', 'MARKET_START_TIME', 'RUNNER_DESCRIPTION'], sort: 'MAXIMUM_TRADED', maxResults: 200,
+    });
+    return r.sort((a, b) => (a.marketName === 'Match Odds' ? 0 : 1) - (b.marketName === 'Match Odds' ? 0 : 1));
+  }
+
   async book(marketId) {
     const r = await this.#bet('listMarketBook', { marketIds: [marketId], priceProjection: { priceData: ['EX_ALL_OFFERS', 'EX_TRADED'] } });
     return r[0] ?? null;
   }
 
-  async place(marketId, { selectionId, side, price, size }) {
+  async place(marketId, { selectionId, side, price, size, persistence = 'LAPSE' }) {
     const r = await this.#bet('placeOrders', {
       marketId,
-      instructions: [{ selectionId, side, orderType: 'LIMIT', limitOrder: { size, price, persistenceType: 'LAPSE' } }],
+      instructions: [{ selectionId, side, orderType: 'LIMIT', limitOrder: { size, price, persistenceType: persistence } }],
     });
     const rep = r.instructionReports?.[0];
     return { status: r.status, errorCode: r.errorCode ?? rep?.errorCode, betId: rep?.betId, sizeMatched: rep?.sizeMatched };
@@ -72,11 +100,11 @@ export class Betfair {
 
   cancel(marketId, betId) { return this.#bet('cancelOrders', { marketId, instructions: [{ betId }] }); }
 
-  async orders() {
-    const r = await this.#bet('listCurrentOrders', { orderProjection: 'ALL' });
+  async orders(marketId) {
+    const r = await this.#bet('listCurrentOrders', { orderProjection: 'ALL', ...(marketId ? { marketIds: [marketId] } : {}) });
     return r.currentOrders.map(o => ({
       betId: o.betId, marketId: o.marketId, selectionId: o.selectionId, side: o.side, status: o.status,
-      price: o.priceSize.price, size: o.priceSize.size, matched: o.sizeMatched ?? 0, remaining: o.sizeRemaining ?? 0,
+      price: o.priceSize.price, size: o.priceSize.size, matched: o.sizeMatched ?? 0, remaining: o.sizeRemaining ?? 0, avgPrice: o.averagePriceMatched ?? 0,
     }));
   }
 

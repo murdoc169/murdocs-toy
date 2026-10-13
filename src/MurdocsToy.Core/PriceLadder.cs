@@ -41,12 +41,22 @@ public static class PriceLadder
         return Snap(price - step);
     }
 
+    /// <summary>Prices descending: about <paramref name="above"/> ticks over the centre and <paramref name="below"/> under it.
+    /// Near the ends of the ladder the window slides so it always holds above+below+1 distinct prices.</summary>
     public static IEnumerable<double> Window(double centre, int above, int below)
     {
+        int total = above + below + 1;
         var list = new List<double>();
         double p = Snap(centre);
-        for (int i = 0; i < above; i++) p = Up(p);
-        for (int i = 0; i < above + below + 1; i++) { list.Add(p); p = Down(p); }
-        return list; // descending prices, highest first
+        for (int i = 0; i < above && p < Max; i++) p = Up(p);
+        for (int i = 0; i < total; i++)
+        {
+            list.Add(p);
+            if (p <= Min) break;
+            p = Down(p);
+        }
+        p = list[0];
+        while (list.Count < total && p < Max) { p = Up(p); list.Insert(0, p); }
+        return list;
     }
 }

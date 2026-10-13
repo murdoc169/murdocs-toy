@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ladder</title>
+<style>
+  :root { --bg:#12151a; --panel:#1b2028; --line:#2b3340; --text:#e6e9ee; --mute:#8b95a5; --back:#a0d2fa; --lay:#fabecd; --accent:#f5c542; --ok:#4cc38a; --bad:#ef5b5b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:13px/1.3 system-ui,Segoe UI,sans-serif; height:100vh; display:grid; grid-template-rows:auto 1fr auto; }
+  button,input,select { background:#0e1116; color:var(--text); border:1px solid var(--line); border-radius:5px; padding:5px 9px; font:inherit; cursor:pointer; }
+  button:hover { border-color:var(--accent); } button.on { background:var(--accent); color:#000; border-color:var(--accent); }
+  #bar { display:flex; gap:6px; align-items:center; padding:6px 8px; background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  #bar b { margin-right:4px; } #stake { width:80px; }
+  #cols { display:grid; grid-auto-flow:column; grid-auto-columns:1fr; gap:2px; min-height:0; }
+  .lad { display:flex; flex-direction:column; min-height:0; background:#fff; color:#000; }
+  .head { background:#282c34; color:#fff; padding:6px 8px; display:grid; grid-template-columns:1fr auto; gap:2px 8px; cursor:pointer; }
+  .head .name { font-size:15px; font-weight:700; } .head .sub { color:#c8ccd4; font-size:11px; grid-column:1; }
+  .head .pl { grid-column:1; font-weight:700; } .head .pl .w { color:#7fe0a0; } .head .pl .l { color:#ff9a9a; }
+  .head button.g { grid-column:2; grid-row:1 / span 3; align-self:center; background:#50565f; border:0; color:#fff; padding:8px 10px; font-weight:700; } .head button.g.has { background:#2ea05a; }
+  .rows { overflow:hidden; flex:1; }
+  .r { display:grid; grid-template-columns:17% 22% 18% 22% 21%; height:22px; border-bottom:1px solid #d7d7d7; }
+  .r > div { text-align:center; line-height:21px; border-right:1px solid #e0e0e0; overflow:hidden; font-variant-numeric:tabular-nums; }
+  .r .p { background:#ebebeb; font-weight:700; } .r .p.ltp { background:gold; }
+  .r .b.has { background:var(--back); cursor:pointer; } .r .l.has { background:var(--lay); cursor:pointer; }
+  .r .b, .r .l { cursor:pointer; } .r .b.best { background:#7fbcf0; } .r .l.best { background:#f59ab4; }
+  .r .o.back { background:var(--back); font-weight:700; cursor:pointer; } .r .o.lay { background:var(--lay); font-weight:700; cursor:pointer; }
+  .r .v { color:#666; font-size:11px; }
+  #status { padding:4px 8px; background:#282c34; color:#fff; font-size:12px; }
+  dialog { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:8px; } dialog label { display:block; margin:8px 0; }
+</style>
+</head>
+<body>
+<div id="bar"></div>
+<div id="cols"></div>
+<div id="status">Loading…</div>
+<dialog id="opts">
+  <form method="dialog">
+    <h3 style="margin-top:0">Options</h3>
+    <label>Stake buttons (comma separated) <input id="o_stakes" size="26"></label>
+    <label>Rows shown <input id="o_rows" type="number" min="9" max="61" style="width:70px"></label>
+    <label>Refresh (ms) <input id="o_ms" type="number" min="500" step="250" style="width:90px"></label>
+    <label>Unmatched bets <select id="o_pers"><option>LAPSE</option><option>PERSIST</option><option>MARKET_ON_CLOSE</option></select></label>
+    <label><input type="checkbox" id="o_confirm"> Confirm every bet (off = one-click)</label>
+    <menu style="padding:0;display:flex;gap:8px;justify-content:flex-end"><button value="cancel">Cancel</button><button id="o_save" value="ok">Save</button></menu>
+  </form>
+</dialog>
+
+<script type="module">
+import { window as ticks, up, down, position, greenUp } from './ladder.js';
+const $ = id => document.getElementById(id);
+const marketId = new URLSearchParams(location.search).get('marketId');
+const el = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; };
+const fmt = v => (v == null ? '' : +v.toFixed(2)).toString();
+const api = async (p, body) => { const r = await fetch('/api/' + p, body ? { method: 'POST', body: JSON.stringify(body) } : {}); const j = await r.json(); if (!r.ok) throw new Error(j.message || j.error); return j; };
+
+const defaults = { stakes: [2, 5, 10, 20, 50, 100], stake: 2, rows: 25, ms: 1000, persistence: 'LAPSE', confirm: false };
+let opt = { ...defaults };
+try { opt = { ...defaults, ...JSON.parse(localStorage.getItem('mt.ladder') || '{}') }; } catch { /* ignore */ }
+const saveOpt = () => { try { localStorage.setItem('mt.ladder', JSON.stringify(opt)); } catch { /* ignore */ } };
+
+let market, book, orders = [], msg = '', timer;
+const centres = new Map(), manual = new Set();
+
+function bar() {
+  const b = $('bar'); b.replaceChildren(el('b', '', 'Stake'));
+  for (const s of opt.stakes) { const x = el('button', s === opt.stake ? 'on' : '', s); x.onclick = () => { opt.stake = s; saveOpt(); bar(); }; b.append(x); }
+  const c = el('input'); c.id = 'stake'; c.type = 'number'; c.min = 1; c.step = 1; c.value = opt.stake;
+  c.oninput = () => { opt.stake = Number(c.value); saveOpt(); [...b.querySelectorAll('button')].forEach(x => x.classList.toggle('on', Number(x.textContent) === opt.stake)); };
+  const ca = el('button', '', 'Cancel all'); ca.onclick = cancelAll;
+  const oo = el('button', '', 'Options'); oo.onclick = openOpts;
+  b.append(c, ca, oo);
+}
+function openOpts() {
+  $('o_stakes').value = opt.stakes.join(', '); $('o_rows').value = opt.rows; $('o_ms').value = opt.ms; $('o_pers').value = opt.persistence; $('o_confirm').checked = opt.confirm;
+  $('opts').showModal();
+}
+$('o_save').onclick = () => {
+  const st = $('o_stakes').value.split(/[,\s;]+/).map(Number).filter(v => v >= 1);
+  if (st.length) opt.stakes = [...new Set(st)].sort((a, b) => a - b);
+  opt.rows = Math.min(61, Math.max(9, Number($('o_rows').value) || 25)); opt.ms = Math.max(500, Number($('o_ms').value) || 1000);
+  opt.persistence = $('o_pers').value; opt.confirm = $('o_confirm').checked; saveOpt(); bar(); restart(); draw();
+};
+
+const nameOf = id => market.runners.find(r => r.selectionId === id)?.runnerName ?? String(id);
+
+async function poll() {
+  try {
+    book = await api('book?marketId=' + encodeURIComponent(marketId));
+    orders = await api('orders?marketId=' + encodeURIComponent(marketId)).catch(() => []);
+    draw();
+  } catch (e) { $('status').textContent = e.message; }
+}
+function restart() { clearInterval(timer); timer = setInterval(poll, opt.ms); }
+
+async function place(side, r, price, size = opt.stake) {
+  if (opt.confirm && !confirm(`${side} ${nameOf(r.selectionId)} @ ${fmt(price)} for ${size.toFixed(2)}?`)) return;
+  try {
+    const x = await api('place', { marketId, selectionId: r.selectionId, side, price, size, persistence: opt.persistence });
+    msg = `${side} ${nameOf(r.selectionId)} ${fmt(price)} x${size.toFixed(2)}: ${x.status}${x.errorCode ? ' ' + x.errorCode : ''}`;
+  } catch (e) { msg = `${side} failed: ${e.message}`; }
+  poll();
+}
+async function cancelAt(r, price) {
+  for (const o of orders.filter(o => o.selectionId === r.selectionId && o.status === 'EXECUTABLE' && Math.abs(o.price - price) < 1e-9))
+    try { await api('cancel', { marketId, betId: o.betId }); msg = `Cancelled ${o.side} ${fmt(o.price)}`; } catch (e) { msg = 'Cancel failed: ' + e.message; }
+  poll();
+}
+async function cancelAll() {
+  for (const o of orders.filter(o => o.status === 'EXECUTABLE')) try { await api('cancel', { marketId, betId: o.betId }); } catch (e) { msg = 'Cancel failed: ' + e.message; }
+  msg = 'Cancelled all open orders'; poll();
+}
+async function green(r) {
+  const pos = position(orders, r.selectionId);
+  if (!pos.ifWins && !pos.ifLoses) { msg = 'Nothing to green up'; return draw(); }
+  const side = pos.ifLoses > pos.ifWins ? 'BACK' : 'LAY';
+  const price = side === 'BACK' ? r.ex?.availableToBack?.[0]?.price : r.ex?.availableToLay?.[0]?.price;
+  if (!price) { msg = 'No price to green up at'; return draw(); }
+  const g = greenUp(pos, price);
+  if (!g) { msg = 'Already level'; return draw(); }
+  const locked = side === 'BACK' ? pos.ifLoses - g.size : pos.ifLoses + g.size;
+  if (!confirm(`${g.side} ${nameOf(r.selectionId)} @ ${fmt(price)} for ${g.size.toFixed(2)} to lock ${locked.toFixed(2)}?`)) return;
+  place(g.side, r, price, g.size);
+}
+
+function draw() {
+  if (!book) return;
+  const cols = $('cols');
+  const runners = [...market.runners].sort((a, b) => (a.sortPriority ?? 0) - (b.sortPriority ?? 0));
+  if (cols.children.length !== runners.length) { cols.replaceChildren(...runners.map(() => el('div', 'lad'))); }
+  runners.forEach((info, i) => {
+    const r = book.runners?.find(x => x.selectionId === info.selectionId); const box = cols.children[i];
+    if (!r) return;
+    if (!manual.has(info.selectionId)) centres.set(info.selectionId, r.lastPriceTraded ?? r.ex?.availableToBack?.[0]?.price ?? 2);
+    const pos = position(orders, info.selectionId), has = pos.ifWins || pos.ifLoses;
+    const head = el('div', 'head');
+    head.append(el('div', 'name', info.runnerName), el('div', 'sub', `LTP ${fmt(r.lastPriceTraded)}   Matched ${Math.round(r.totalMatched ?? 0).toLocaleString()}`));
+    const pl = el('div', 'pl'); const w = el('span', 'w', 'Win ' + (has ? (pos.ifWins >= 0 ? '+' : '') + pos.ifWins.toFixed(2) : '-')); const l = el('span', 'l', ' Lose ' + (has ? (pos.ifLoses >= 0 ? '+' : '') + pos.ifLoses.toFixed(2) : '-'));
+    w.style.color = pos.ifWins < 0 ? '#ff9a9a' : ''; l.style.color = pos.ifLoses >= 0 ? '#7fe0a0' : '#ff9a9a'; pl.append(w, l);
+    const g = el('button', 'g' + (has ? ' has' : ''), 'Green up'); g.onclick = e => { e.stopPropagation(); green(r); };
+    head.append(pl, g); head.onclick = () => { manual.delete(info.selectionId); draw(); };
+    const rows = el('div', 'rows');
+    const wheel = e => { e.preventDefault(); manual.add(info.selectionId); let c = centres.get(info.selectionId); for (let k = 0; k < 3; k++) c = e.deltaY < 0 ? up(c) : down(c); centres.set(info.selectionId, c); draw(); };
+    rows.onwheel = wheel;
+    const m = a => new Map((a ?? []).map(p => [p.price, p.size]));
+    const back = m(r.ex?.availableToBack), lay = m(r.ex?.availableToLay), trd = m(r.ex?.tradedVolume);
+    const bb = r.ex?.availableToBack?.[0]?.price, bl = r.ex?.availableToLay?.[0]?.price;
+    const mine = orders.filter(o => o.selectionId === info.selectionId && o.status === 'EXECUTABLE' && o.remaining > 0);
+    const n = Math.max(9, Math.floor((innerHeight - 138) / 22));
+    for (const price of ticks(centres.get(info.selectionId), Math.floor(n / 2), n - Math.floor(n / 2) - 1)) {
+      const row = el('div', 'r');
+      const mo = mine.filter(o => Math.abs(o.price - price) < 1e-9);
+      const o = el('div', 'o' + (mo.length ? ' ' + mo[0].side.toLowerCase() : ''), mo.length ? mo.reduce((s, x) => s + x.remaining, 0).toFixed(2) : '');
+      o.onclick = () => cancelAt(r, price);
+      const b = el('div', 'b' + (back.has(price) ? ' has' : '') + (price === bb ? ' best' : ''), back.has(price) ? Math.round(back.get(price)).toLocaleString() : ''); b.onclick = () => place('BACK', r, price);
+      const p = el('div', 'p' + (price === r.lastPriceTraded ? ' ltp' : ''), fmt(price));
+      const lyr = el('div', 'l' + (lay.has(price) ? ' has' : '') + (price === bl ? ' best' : ''), lay.has(price) ? Math.round(lay.get(price)).toLocaleString() : ''); lyr.onclick = () => place('LAY', r, price);
+      const v = el('div', 'v', trd.has(price) ? Math.round(trd.get(price)).toLocaleString() : '');
+      row.append(o, b, p, lyr, v); rows.append(row);
+    }
+    box.replaceChildren(head, rows);
+  });
+  $('status').textContent = `${book.status}${book.inPlay ? ' IN-PLAY' : ''}   Matched ${Math.round(book.totalMatched ?? 0).toLocaleString()}${book.isMarketDataDelayed ? '   DELAYED DATA (delayed app key)' : ''}${msg ? '   |   ' + msg : ''}`;
+}
+
+addEventListener('resize', () => draw());
+(async () => {
+  if (!marketId) { $('status').textContent = 'No marketId'; return; }
+  market = await api('market?marketId=' + encodeURIComponent(marketId));
+  if (!market) { $('status').textContent = 'Market not found'; return; }
+  document.title = `${market.event?.name ?? ''} - ${market.marketName}`;
+  bar(); await poll(); restart();
+})().catch(e => { $('status').textContent = e.message; });
+</script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 // Run: node --test web/test.mjs   (live tests need BETFAIR_APP_KEY / USERNAME / PASSWORD)
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { up, down, snap, window } from './public/ladder.js';
+import { up, down, snap, window, position, greenUp } from './public/ladder.js';
 import { createServer } from './server.mjs';
 
 test('ladder steps', () => {
@@ -10,6 +10,23 @@ test('ladder steps', () => {
   assert.equal(snap(2.019), 2.02);
   const w = window(3, 3, 3);
   assert.equal(w.length, 7); assert.equal(w[3], 3);
+});
+
+test('ladder window is full and distinct at the edges', () => {
+  for (const c of [1.01, 1.02, 1000, 3]) {
+    const w = window(c, 10, 10);
+    assert.equal(w.length, 21); assert.equal(new Set(w).size, 21);
+    assert.deepEqual(w, [...w].sort((a, b) => b - a));
+  }
+});
+
+test('position and green up', () => {
+  const o = (side, price, matched) => ({ selectionId: 7, side, price, matched, avgPrice: price });
+  const pos = position([o('BACK', 4, 10)], 7);
+  assert.deepEqual(pos, { ifWins: 30, ifLoses: -10 });
+  assert.deepEqual(greenUp(pos, 3), { side: 'LAY', size: 13.33 });
+  assert.deepEqual(greenUp(position([o('LAY', 2, 10)], 7), 2.5), { side: 'BACK', size: 8 });
+  assert.equal(greenUp({ ifWins: 5, ifLoses: 5 }, 2), null);
 });
 
 const live = process.env.BETFAIR_APP_KEY && process.env.BETFAIR_USERNAME && process.env.BETFAIR_PASSWORD;

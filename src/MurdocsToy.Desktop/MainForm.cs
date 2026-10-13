@@ -6,16 +6,21 @@ sealed class MainForm : Form
 {
     readonly BetfairClient _bf;
     readonly bool _smoke;
+    readonly Options _opt = Options.Load();
+    readonly bool _openLadder;
+    readonly Button _openBtn = new() { Text = "Open ladder", AutoSize = true };
+    readonly Button _optBtn = new() { Text = "Options", AutoSize = true };
     readonly bool _privacy; // --privacy hides balance and orders (for screenshots and screen sharing)
 
     readonly ComboBox _sports = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 140 };
-    readonly TextBox _search = new() { Width = 160, PlaceholderText = "search markets" };
+    readonly TextBox _search = new() { Width = 160, PlaceholderText = "search matches" };
     readonly CheckBox _inPlay = new() { Text = "In-play", AutoSize = true };
     readonly Button _find = new() { Text = "Find", AutoSize = true };
     readonly NumericUpDown _stake = new() { DecimalPlaces = 2, Minimum = 1, Maximum = 10000, Value = 2, Width = 70 };
     readonly Label _funds = new() { AutoSize = true, Padding = new Padding(8, 5, 0, 0) };
     readonly Label _banner = new() { AutoSize = true, Padding = new Padding(8, 5, 0, 0), ForeColor = Color.DarkOrange };
-    readonly ListBox _markets = new() { Dock = DockStyle.Fill, IntegralHeight = false };
+    readonly TreeView _tree = new() { Dock = DockStyle.Fill, ShowLines = true, ShowRootLines = true, HideSelection = false, FullRowSelect = true, ItemHeight = 20 };
+    readonly Dictionary<TreeNode, Task> _loads = new();
     readonly DataGridView _runners = Grid();
     readonly DataGridView _ladder = Grid();
     readonly DataGridView _orders = Grid();
@@ -39,9 +44,10 @@ sealed class MainForm : Form
 
     static readonly Color BackBlue = Color.FromArgb(160, 210, 250), LayPink = Color.FromArgb(250, 190, 205);
 
-    public MainForm(BetfairClient bf, bool smoke, bool privacy = false)
+    public MainForm(BetfairClient bf, bool smoke, bool privacy = false, bool openLadder = false, string? search = null)
     {
-        _bf = bf; _smoke = smoke; _privacy = privacy;
+        if (search != null) _search.Text = search;
+        _bf = bf; _smoke = smoke; _privacy = privacy; _openLadder = openLadder;
         Text = "Murdoc's Toy";
         Size = new Size(1280, 800);
         MinimumSize = new Size(900, 600);
@@ -51,6 +57,7 @@ sealed class MainForm : Form
         top.Controls.AddRange(new Control[]
         {
             new Label { Text = "Sport", AutoSize = true, Padding = new Padding(0, 5, 0, 0) }, _sports, _search, _inPlay, _find,
+            _openBtn, _optBtn,
             new Label { Text = "Stake", AutoSize = true, Padding = new Padding(16, 5, 0, 0) }, _stake, _funds, _banner,
         });
 
@@ -64,7 +71,7 @@ sealed class MainForm : Form
         right.Panel2.Controls.Add(lower);
 
         var main = new SplitContainer { Dock = DockStyle.Fill, SplitterDistance = 320 };
-        main.Panel1.Controls.Add(_markets);
+        main.Panel1.Controls.Add(_tree);
         main.Panel2.Controls.Add(right);
 
         Controls.Add(main); Controls.Add(top); Controls.Add(_status);
@@ -76,9 +83,15 @@ sealed class MainForm : Form
         _ladder.Columns.AddRange(Col("Traded"), Col("Back"), Col("Price"), Col("Lay"));
         _orders.Columns.AddRange(Col("Market", 2), Col("Runner", 2), Col("Side"), Col("Price"), Col("Size"), Col("Matched"), Col("Remaining"), Col("Status"), Col("Bet id", 2));
 
-        _find.Click += async (_, _) => await FindMarkets();
-        _search.KeyDown += async (_, e) => { if (e.KeyCode == Keys.Enter) await FindMarkets(); };
-        _markets.SelectedIndexChanged += async (_, _) => await OpenMarket();
+        _openBtn.Click += async (_, _) => await OpenLadder();
+        _optBtn.Click += (_, _) => { using var f = new OptionsForm(_opt); if (f.ShowDialog(this) == DialogResult.OK) _opt.Save(); };
+        _tree.BeforeExpand += (_, e) => { _ = ExpandLoad(e.Node!); };
+        _tree.AfterSelect += async (_, e) => await OnPick(e.Node!);
+        _tree.NodeMouseDoubleClick += async (_, e) => { _tree.SelectedNode = e.Node; await OpenLadder(); };
+        _sports.SelectedIndexChanged += async (_, _) => { if (_sports.Focused) await LoadTree(); };
+        _inPlay.CheckedChanged += async (_, _) => await LoadTree();
+        _find.Click += async (_, _) => await LoadTree();
+        _search.KeyDown += async (_, e) => { if (e.KeyCode == Keys.Enter) await LoadTree(); };
         _runners.SelectionChanged += (_, _) => PickRunner();
         _ladder.CellClick += async (_, e) => await LadderClick(e);
         _orders.CellDoubleClick += async (_, e) => await CancelOrder(e.RowIndex);
@@ -108,9 +121,11 @@ sealed class MainForm : Form
             _types = await _bf.ListEventTypesAsync();
             _sports.Items.AddRange(_types.Select(t => t.Name).Cast<object>().ToArray());
             _sports.SelectedIndex = Math.Max(0, _types.FindIndex(t => t.Name == "Soccer"));
-            await FindMarkets();
+            await LoadTree();
+            await AutoSelect();
             await RefreshFunds();
             _timer.Start();
+            if (_openLadder) await OpenLadder();
         }
         catch (Exception ex) { Say(ex.Message); if (_smoke) Smoke("FAIL " + ex.Message, 1); }
     }
@@ -126,29 +141,93 @@ sealed class MainForm : Form
         catch (BetfairException ex) { _funds.Text = "Funds: " + ex.Code; }
     }
 
-    async Task FindMarkets()
+    static readonly object Placeholder = "ph";
+    string SportId => _types[_sports.SelectedIndex].Id;
+
+    static TreeNode WithPlaceholder(TreeNode n) { n.Nodes.Add(new TreeNode("Loading...") { Tag = Placeholder }); return n; }
+
+    /// <summary>Root of the tree: competitions of the chosen sport, or matching matches when a search text is given.</summary>
+    async Task LoadTree()
     {
         if (_sports.SelectedIndex < 0) return;
         try
         {
-            Say("Loading markets...");
-            _catalog = await _bf.ListMarketCatalogueAsync(_types[_sports.SelectedIndex].Id,
-                string.IsNullOrWhiteSpace(_search.Text) ? null : _search.Text, _inPlay.Checked, null, 100);
-            _markets.Items.Clear();
-            foreach (var m in _catalog)
-                _markets.Items.Add($"{m.MarketStartTime?.ToLocalTime():dd/MM HH:mm}  {m.Event?.Name} - {m.MarketName}");
-            Say($"{_catalog.Count} markets");
-            if (_catalog.Count > 0 && _market == null)
-                _markets.SelectedIndex = Math.Max(0, _catalog.FindIndex(m => m.MarketName == "Match Odds"));
+            Say("Loading...");
+            _loads.Clear(); _tree.Nodes.Clear(); _market = null;
+            var text = string.IsNullOrWhiteSpace(_search.Text) ? null : _search.Text.Trim();
+            if (text != null)
+                foreach (var e in await _bf.ListEventsAsync(SportId, null, text, _inPlay.Checked)) _tree.Nodes.Add(EventTreeNode(e));
+            else
+                foreach (var c in await _bf.ListCompetitionsAsync(SportId, _inPlay.Checked))
+                    _tree.Nodes.Add(WithPlaceholder(new TreeNode($"{c.Name} ({c.MarketCount})") { Tag = c }));
+            Say(_tree.Nodes.Count == 0 ? "Nothing found" : $"{_tree.Nodes.Count} {(text != null ? "matches" : "competitions")}");
         }
         catch (Exception ex) { Say(ex.Message); }
     }
 
-    async Task OpenMarket()
+    static TreeNode EventTreeNode(EventNode e) =>
+        WithPlaceholder(new TreeNode($"{e.OpenDate?.ToLocalTime():dd/MM HH:mm}  {e.Name}") { Tag = e });
+
+    /// <summary>Loads a node's children once (events of a competition, markets of a match).</summary>
+    Task ExpandLoad(TreeNode n)
     {
-        if (_markets.SelectedIndex < 0) return;
-        _market = _catalog[_markets.SelectedIndex];
-        _book = null; _selected = null;
+        if (_loads.TryGetValue(n, out var t)) return t;
+        if (n.Nodes.Count != 1 || n.Nodes[0].Tag != Placeholder) return Task.CompletedTask;
+        return _loads[n] = Fill(n);
+    }
+
+    async Task Fill(TreeNode n)
+    {
+        try
+        {
+            var kids = new List<TreeNode>();
+            if (n.Tag is CompetitionNode c)
+                kids.AddRange((await _bf.ListEventsAsync(SportId, c.Id, null, _inPlay.Checked)).Select(EventTreeNode));
+            else if (n.Tag is EventNode e)
+                foreach (var m in await _bf.ListEventMarketsAsync(e.Id))
+                {
+                    if (!_catalog.Any(x => x.MarketId == m.MarketId)) _catalog.Add(m);
+                    kids.Add(new TreeNode(m.MarketName) { Tag = m });
+                }
+            n.Nodes.Clear();
+            foreach (var k in kids) n.Nodes.Add(k);
+        }
+        catch (Exception ex) { Say(ex.Message); n.Nodes.Clear(); WithPlaceholder(n); _loads.Remove(n); }
+    }
+
+    /// <summary>Opens the busiest competition's first match and selects its Match Odds market.</summary>
+    async Task AutoSelect()
+    {
+        var node = _tree.Nodes.Cast<TreeNode>().OrderByDescending(x => (x.Tag as CompetitionNode)?.MarketCount ?? 0).FirstOrDefault();
+        if (node == null) return;
+        if (node.Tag is CompetitionNode) { node.Expand(); await ExpandLoad(node); node = node.Nodes.Cast<TreeNode>().FirstOrDefault(x => x.Tag is EventNode); }
+        if (node?.Tag is not EventNode) return;
+        node.Expand(); await ExpandLoad(node);
+        _tree.SelectedNode = node.Nodes.Cast<TreeNode>().FirstOrDefault(x => (x.Tag as MarketCatalogEntry)?.MarketName == "Match Odds") ?? node.FirstNode;
+    }
+
+    async Task<MarketCatalogEntry?> ResolveMarket(TreeNode? n)
+    {
+        if (n?.Tag is MarketCatalogEntry m) return m;
+        if (n?.Tag is EventNode)
+        {
+            await ExpandLoad(n);
+            return n.Nodes.Cast<TreeNode>().Select(x => x.Tag as MarketCatalogEntry).FirstOrDefault(x => x != null);
+        }
+        return null;
+    }
+
+    async Task OpenLadder()
+    {
+        var m = await ResolveMarket(_tree.SelectedNode);
+        if (m == null) { Say("Select a match or market first"); return; }
+        new LadderForm(_bf, m, _opt, _privacy).Show(this);
+    }
+
+    async Task OnPick(TreeNode n)
+    {
+        if (n.Tag is not MarketCatalogEntry m) return;
+        _market = m; _book = null; _selected = null;
         await Poll();
     }
 

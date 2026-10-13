@@ -15,9 +15,12 @@
   .grow { flex:1; } .mute { color:var(--mute); } .warn { color:#ffb454; font-weight:600; }
   main { display:grid; grid-template-columns:320px 1fr 340px; min-height:0; }
   section { min-height:0; overflow:auto; border-right:1px solid var(--line); }
-  #markets div { padding:8px 12px; border-bottom:1px solid var(--line); cursor:pointer; }
-  #markets div:hover, #markets div.sel { background:var(--panel); }
-  #markets small { color:var(--mute); display:block; }
+  #markets { padding:6px 0; font-size:13px; }
+  .node { padding:3px 8px 3px 0; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .node:hover, .node.sel { background:var(--panel); } .node.sel { color:var(--accent); }
+  .node .tw { display:inline-block; width:16px; text-align:center; color:var(--mute); }
+  .node small { color:var(--mute); margin-left:6px; }
+  .kids { margin-left:14px; border-left:1px solid var(--line); }
   table { border-collapse:collapse; width:100%; }
   th { font-weight:500; color:var(--mute); text-align:center; padding:6px; position:sticky; top:0; background:var(--bg); }
   td { text-align:center; padding:4px 6px; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; }
@@ -42,7 +45,7 @@
 <header>
   <h1>Murdoc's Toy</h1>
   <select id="sport"></select>
-  <input id="q" placeholder="search markets" size="18">
+  <input id="q" placeholder="search matches" size="18">
   <label><input type="checkbox" id="inplay"> in-play</label>
   <button id="find">Find</button>
   <span class="grow"></span>
@@ -120,19 +123,63 @@ async function funds() {
   try { const f = await api('funds'); $('funds').textContent = `Balance ${f.available.toFixed(2)} · Exposure ${f.exposure.toFixed(2)}`; } catch (e) { $('funds').textContent = ''; }
 }
 
-async function find() {
-  const p = new URLSearchParams({ eventTypeId: $('sport').value, q: $('q').value, inPlay: $('inplay').checked ? 1 : 0 });
-  try { state.markets = await api('markets?' + p); } catch (e) { return toast(e.message); }
-  const box = $('markets'); box.replaceChildren();
-  for (const m of state.markets) {
-    const d = el('div', m.marketId === state.market?.marketId ? 'sel' : '', `${m.event?.name ?? ''} – ${m.marketName}`);
-    d.append(el('small', '', new Date(m.marketStartTime).toLocaleString()));
-    d.onclick = () => { state.market = m; state.book = null; state.sel = null; [...box.children].forEach(c => c.classList.remove('sel')); d.classList.add('sel'); poll(); };
-    box.append(d);
+const sportId = () => $('sport').value;
+const inPlay = () => ($('inplay').checked ? 1 : 0);
+const qs = o => new URLSearchParams(o).toString();
+
+/** Tree: competition > match > markets (children load when a node is first opened). */
+function treeNode(label, sub, loader, onPick, onOpen) {
+  const wrap = el('div'); const row = el('div', 'node'); const tw = el('span', 'tw', loader ? '▸' : '·');
+  row.append(tw, document.createTextNode(label)); if (sub) row.append(el('small', '', sub));
+  const kids = el('div', 'kids hidden'); let loaded = false;
+  async function toggle() {
+    if (!loader) return;
+    const open = kids.classList.contains('hidden');
+    if (open && !loaded) { loaded = true; kids.textContent = 'Loading…'; try { kids.replaceChildren(...(await loader())); } catch (e) { loaded = false; kids.textContent = e.message; } }
+    kids.classList.toggle('hidden', !open); tw.textContent = open ? '▾' : '▸';
   }
-  if (!state.market && box.firstChild) (box.children[Math.max(0, state.markets.findIndex(m => m.marketName === 'Match Odds'))]).click();
+  row.onclick = () => { document.querySelectorAll('.node.sel').forEach(n => n.classList.remove('sel')); row.classList.add('sel'); onPick?.(); toggle(); };
+  row.ondblclick = () => onOpen?.();
+  wrap.append(row, kids); wrap.row = row; wrap.kids = kids;
+  wrap.open = async () => { if (kids.classList.contains('hidden')) await toggle(); };
+  return wrap;
+}
+const popup = id => window.open('ladder.html?marketId=' + encodeURIComponent(id), 'ladder-' + id, 'popup,width=1100,height=760');
+function pickMarket(m) { state.market = m; state.book = null; state.sel = null; poll(); }
+function marketNode(m) { return treeNode(m.marketName, '', null, () => pickMarket(m), () => popup(m.marketId)); }
+function eventNode(e) {
+  let first = null;
+  const n = treeNode(e.name, new Date(e.openDate).toLocaleString([], { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }), async () => {
+    const ms = await api('eventmarkets?' + qs({ eventId: e.id }));
+    return ms.map(m => { const c = marketNode(m); first ??= { m, c }; return c; });
+  }, null, async () => { const ms = await api('eventmarkets?' + qs({ eventId: e.id })); if (ms[0]) popup(ms[0].marketId); });
+  return n;
+}
+
+async function find() {
+  const box = $('markets'); box.textContent = 'Loading…';
+  try {
+    const text = $('q').value.trim();
+    const nodes = text
+      ? (await api('events?' + qs({ eventTypeId: sportId(), q: text, inPlay: inPlay() }))).map(eventNode)
+      : (await api('competitions?' + qs({ eventTypeId: sportId(), inPlay: inPlay() }))).map(c =>
+          treeNode(c.name, `(${c.marketCount})`, async () => (await api('events?' + qs({ eventTypeId: sportId(), competitionId: c.id, inPlay: inPlay() }))).map(eventNode)));
+    box.replaceChildren(...(nodes.length ? nodes : [el('div', 'node', 'Nothing found')]));
+    if (!state.market) autoSelect(box);
+  } catch (e) { box.textContent = e.message; toast(e.message); }
+}
+/** Open the first match's Match Odds so the screen is never empty. */
+async function autoSelect(box) {
+  let node = box.children[0];
+  if (!node?.open) return;
+  if (!$('q').value.trim()) { await node.open(); node = node.kids.children[0]; }   // competition -> its first match
+  if (!node?.open) return;
+  await node.open();
+  const mo = [...node.kids.children].find(c => c.row?.textContent.startsWith('Match Odds')) ?? node.kids.children[0];
+  mo?.row?.click();
 }
 $('find').onclick = find; $('q').onkeydown = e => e.key === 'Enter' && find();
+$('inplay').onchange = find; $('sport').onchange = find;
 
 async function poll() {
   if (state.busy) return; state.busy = true;

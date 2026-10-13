@@ -81,6 +81,51 @@ public sealed class BetfairClient : IDisposable
                 .OrderBy(e => e.Name).ToList();
     }
 
+    static Dictionary<string, object?> TreeFilter(string eventTypeId, bool inPlayOnly, string? competitionId = null, string? text = null, string? eventId = null)
+    {
+        var f = new Dictionary<string, object?>
+        {
+            ["eventTypeIds"] = new[] { eventTypeId },
+            ["inPlayOnly"] = inPlayOnly ? true : null,
+            ["competitionIds"] = competitionId == null ? null : new[] { competitionId },
+            ["eventIds"] = eventId == null ? null : new[] { eventId },
+            ["textQuery"] = text,
+        };
+        // upcoming window: started up to 3h ago (in-play) through the next 2 days
+        f["marketStartTime"] = new { from = DateTime.UtcNow.AddHours(-3).ToString("o"), to = DateTime.UtcNow.AddDays(2).ToString("o") };
+        return f;
+    }
+
+    public async Task<List<CompetitionNode>> ListCompetitionsAsync(string eventTypeId, bool inPlayOnly = false, CancellationToken ct = default)
+    {
+        var r = await Betting<List<JsonNode>>("listCompetitions", new { filter = TreeFilter(eventTypeId, inPlayOnly) }, ct);
+        return r.Select(x => new CompetitionNode(x["competition"]!["id"]!.ToString(), x["competition"]!["name"]!.ToString(),
+                x["competitionRegion"]?.ToString(), x["marketCount"]?.GetValue<int>() ?? 0))
+            .OrderBy(c => c.Name).ToList();
+    }
+
+    public async Task<List<EventNode>> ListEventsAsync(string eventTypeId, string? competitionId = null, string? text = null,
+        bool inPlayOnly = false, CancellationToken ct = default)
+    {
+        var r = await Betting<List<JsonNode>>("listEvents", new { filter = TreeFilter(eventTypeId, inPlayOnly, competitionId, text) }, ct);
+        return r.Select(x => new EventNode(x["event"]!["id"]!.ToString(), x["event"]!["name"]!.ToString(), x["event"]!["countryCode"]?.ToString(),
+                x["event"]!["openDate"]?.GetValue<DateTime>(), x["marketCount"]?.GetValue<int>() ?? 0))
+            .OrderBy(e => e.OpenDate).ThenBy(e => e.Name).ToList();
+    }
+
+    /// <summary>All markets of one match/event; "Match Odds" first, then by traded volume.</summary>
+    public async Task<List<MarketCatalogEntry>> ListEventMarketsAsync(string eventId, CancellationToken ct = default)
+    {
+        var r = await Betting<List<MarketCatalogEntry>>("listMarketCatalogue", new
+        {
+            filter = new { eventIds = new[] { eventId } },
+            marketProjection = new[] { "EVENT", "MARKET_START_TIME", "RUNNER_DESCRIPTION" },
+            sort = "MAXIMUM_TRADED",
+            maxResults = 200,
+        }, ct);
+        return r.OrderBy(m => m.MarketName == "Match Odds" ? 0 : 1).ToList();
+    }
+
     public async Task<List<MarketCatalogEntry>> ListMarketCatalogueAsync(
         string? eventTypeId = null, string? textQuery = null, bool inPlayOnly = false,
         string? marketTypeCode = null, int max = 100, CancellationToken ct = default)
@@ -131,14 +176,14 @@ public sealed class BetfairClient : IDisposable
     public async Task CancelOrderAsync(string marketId, string betId, CancellationToken ct = default) =>
         await Betting<JsonNode>("cancelOrders", new { marketId, instructions = new[] { new { betId } } }, ct);
 
-    public async Task<List<CurrentOrder>> ListCurrentOrdersAsync(CancellationToken ct = default)
+    public async Task<List<CurrentOrder>> ListCurrentOrdersAsync(string? marketId = null, CancellationToken ct = default)
     {
-        var r = await Betting<JsonNode>("listCurrentOrders", new { orderProjection = "ALL" }, ct);
+        var r = await Betting<JsonNode>("listCurrentOrders", new { orderProjection = "ALL", marketIds = marketId == null ? null : new[] { marketId } }, ct);
         return (r["currentOrders"]?.AsArray() ?? new JsonArray()).Select(o => new CurrentOrder(
             o!["betId"]!.ToString(), o["marketId"]!.ToString(), o["selectionId"]!.GetValue<long>(),
             o["side"]!.ToString(), o["status"]!.ToString(), o["priceSize"]!["price"]!.GetValue<double>(),
             o["priceSize"]!["size"]!.GetValue<double>(), o["sizeMatched"]?.GetValue<double>() ?? 0,
-            o["sizeRemaining"]?.GetValue<double>() ?? 0)).ToList();
+            o["sizeRemaining"]?.GetValue<double>() ?? 0, o["averagePriceMatched"]?.GetValue<double>() ?? 0)).ToList();
     }
 
     public async Task<AccountFunds> GetAccountFundsAsync(CancellationToken ct = default)

@@ -10,7 +10,8 @@ static class Program
         ApplicationConfiguration.Initialize();
         using var login = new LoginForm(args.Contains("--smoke") || args.Contains("--autologin"));
         if (login.ShowDialog() != DialogResult.OK || login.Client == null) return;
-        Application.Run(new MainForm(login.Client, args.Contains("--smoke"), args.Contains("--privacy")));
+        Application.Run(new MainForm(login.Client, args.Contains("--smoke"), args.Contains("--privacy"), args.Contains("--open-ladder"),
+            args.FirstOrDefault(a => a.StartsWith("--search="))?[9..]));
     }
 }
 

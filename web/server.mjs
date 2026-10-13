@@ -19,13 +19,17 @@ export function createServer(appKey = process.env.BETFAIR_APP_KEY) {
     'GET /api/status': async () => ({ loggedIn: bf.loggedIn, hasEnvCreds: !!(process.env.BETFAIR_USERNAME && process.env.BETFAIR_PASSWORD) }),
     'GET /api/eventtypes': () => bf.eventTypes(),
     'GET /api/markets': (_, q) => bf.markets({ eventTypeId: q.get('eventTypeId'), text: q.get('q') || undefined, inPlay: q.get('inPlay') === '1', marketType: q.get('marketType') || undefined }),
+    'GET /api/competitions': (_, q) => bf.competitions({ eventTypeId: q.get('eventTypeId'), inPlay: q.get('inPlay') === '1' }),
+    'GET /api/events': (_, q) => bf.events({ eventTypeId: q.get('eventTypeId'), competitionId: q.get('competitionId') || undefined, text: q.get('q') || undefined, inPlay: q.get('inPlay') === '1' }),
+    'GET /api/eventmarkets': (_, q) => bf.eventMarkets(q.get('eventId')),
+    'GET /api/market': async (_, q) => (await bf.markets({ marketIds: [q.get('marketId')] }))[0] ?? null,
     'GET /api/book': (_, q) => bf.book(q.get('marketId')),
-    'GET /api/orders': () => bf.orders(),
+    'GET /api/orders': (_, q) => bf.orders(q.get('marketId') || undefined),
     'GET /api/funds': () => bf.funds(),
     'POST /api/place': (b) => {
-      const { marketId, selectionId, side, price, size } = b;
-      if (!['BACK', 'LAY'].includes(side) || !(price >= 1.01 && price <= 1000) || !(size >= 1)) throw new BetfairError('INVALID_INPUT');
-      return bf.place(marketId, { selectionId, side, price, size });
+      const { marketId, selectionId, side, price, size, persistence } = b;
+      if (!['BACK', 'LAY'].includes(side) || !(price >= 1.01 && price <= 1000) || !(size >= 1) || (persistence && !['LAPSE', 'PERSIST', 'MARKET_ON_CLOSE'].includes(persistence))) throw new BetfairError('INVALID_INPUT');
+      return bf.place(marketId, { selectionId, side, price, size, persistence });
     },
     'POST /api/cancel': (b) => bf.cancel(b.marketId, b.betId),
   };
