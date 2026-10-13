@@ -1,7 +1,7 @@
 ; Inno Setup script for Murdoc's Toy. Build: publish to dist/app first (see README), then
-;   ISCC.exe installer\MurdocsToy.iss   ->  dist\MurdocsToy-Setup-0.6.4.exe
+;   ISCC.exe installer\MurdocsToy.iss   ->  dist\MurdocsToy-Setup-0.6.5.exe
 #define AppName "Murdoc's Toy"
-#define AppVersion "0.6.4"
+#define AppVersion "0.6.5"
 
 [Setup]
 AppId={{6F1B7C52-3A0D-4E7B-9C54-5D2E8B1A7F10}

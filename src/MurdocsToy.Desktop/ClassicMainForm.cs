@@ -52,6 +52,7 @@ sealed class ClassicMainForm : ChromeForm
         ClientSize = new Size(285, 820); MinimumSize = new Size(260, 420);
         StartPosition = FormStartPosition.Manual; Location = new Point(40, 40);
         Theme.TitleBar(this, Cl.BarTop, Color.White);
+        Cl.Dark = _opt.ClassicDark;
         LoadNames();
 
         var nav = new ClassicSection("Market Navigator", 0) { Dock = DockStyle.Fill };
@@ -62,6 +63,9 @@ sealed class ClassicMainForm : ChromeForm
         Controls.Add(nav); Controls.Add(_info);
 
         _tree.ImageList = _images;
+        _tree.MouseUp += (_, e) => { if (e.Button == MouseButtons.Right && _tree.GetNodeAt(e.Location) == null) ThemeMenu().Show(_tree, e.Location); };
+        var statusMenu = new ContextMenuStrip(); statusMenu.Opening += (_, _) => { statusMenu.Items.Clear(); statusMenu.Items.Add(ThemeItem()); }; _status.ContextMenuStrip = statusMenu;
+        nav.Body.BackColor = Cl.Panel; ApplyTheme(nav);
         _info.Paint += PaintInfo;
         _info.MouseUp += (_, e) => { if (e.Button == MouseButtons.Right) InfoMenu(e.Location); else if (e.Button == MouseButtons.Left && _rulesBadge.Contains(e.Location)) OpenSettings("Automation rules"); };
         _host.Rules.Changed += () => { if (!IsDisposed && IsHandleCreated) BeginInvoke(() => _info.Invalidate()); };
@@ -148,7 +152,7 @@ sealed class ClassicMainForm : ChromeForm
         using var line = new Pen(Cl.Border); g.DrawRectangle(line, 0, 0, _info.Width - 1, _info.Height - 1);
         int x = 6;
         if (_currencyFlag != "" && Flags.Get(_currencyFlag) != null) { g.DrawImage(Flags.Icon(_currencyFlag, new Size(16, 12)), x, 6); x += 22; }
-        TextRenderer.DrawText(g, _balance, Cl.Name, new Point(x, 4), Color.Black);
+        TextRenderer.DrawText(g, _balance, Cl.Name, new Point(x, 4), Cl.Ink);
         _rulesBadge = Rectangle.Empty;
         if (_host.Rules.Armed)
         {
@@ -165,11 +169,11 @@ sealed class ClassicMainForm : ChromeForm
     {
         var g = e.Graphics;
         g.DrawImage(ClIcons.Sport(SportName), 5, 6);
-        TextRenderer.DrawText(g, SportName == "Soccer" ? "Soccer Matches" : SportName, Cl.SportHead, new Point(26, 4), Color.Black);
+        TextRenderer.DrawText(g, SportName == "Soccer" ? "Soccer Matches" : SportName, Cl.SportHead, new Point(26, 4), Cl.Ink);
         Arrow(g, _sportHead.Width - 12, 13);
     }
 
-    static void Arrow(Graphics g, int x, int y) => g.FillPolygon(Brushes.Black, new[] { new Point(x - 3, y - 1), new Point(x + 3, y - 1), new Point(x, y + 2) });
+    static void Arrow(Graphics g, int x, int y) { using var b = new SolidBrush(Cl.Ink); g.FillPolygon(b, new[] { new Point(x - 3, y - 1), new Point(x + 3, y - 1), new Point(x, y + 2) }); }
 
     Rectangle _whenRect, _scopeRect;
 
@@ -177,14 +181,14 @@ sealed class ClassicMainForm : ChromeForm
     {
         var g = e.Graphics; int w = _filters.Width;
         _whenRect = new Rectangle(0, 0, w * 5 / 12, _filters.Height); _scopeRect = new Rectangle(_whenRect.Right, 0, w - _whenRect.Width, _filters.Height);
-        using var edge = new Pen(Color.FromArgb(0xC0, 0xC0, 0xC0));
+        using var edge = new Pen(Cl.Edge);
         g.DrawLine(edge, 0, 0, w, 0); g.DrawLine(edge, _scopeRect.X, 0, _scopeRect.X, _filters.Height);
         g.DrawImage(ClIcons.Calendar, 5, 4);
         var whenText = _when switch { When.Today => "Today", When.Tomorrow => "Tomorrow", _ => "2 days" };
-        TextRenderer.DrawText(g, whenText, Cl.Filter, new Point(26, 3), _scope == Scope.InPlay ? Color.Gray : Color.Black);   // the date filter does not apply to in-play
+        TextRenderer.DrawText(g, whenText, Cl.Filter, new Point(26, 3), _scope == Scope.InPlay ? Color.Gray : Cl.Ink);   // the date filter does not apply to in-play
         Arrow(g, _whenRect.Right - 10, 12);
         g.DrawImage(ClIcons.Pitch, _scopeRect.X + 6, 4);
-        TextRenderer.DrawText(g, _scope switch { Scope.InPlay => "In-play", Scope.Favorites => "Favorites", _ => "All" }, Cl.Filter, new Point(_scopeRect.X + 28, 3), Color.Black);
+        TextRenderer.DrawText(g, _scope switch { Scope.InPlay => "In-play", Scope.Favorites => "Favorites", _ => "All" }, Cl.Filter, new Point(_scopeRect.X + 28, 3), Cl.Ink);
         Arrow(g, w - 10, 12);
     }
 
@@ -244,6 +248,7 @@ sealed class ClassicMainForm : ChromeForm
         menu.Items.Add(new ToolStripSeparator());
         if (_host.Web != null) menu.Items.Add($"Open web mirror ({_host.Web.Url})", null, (_, _) => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(_host.Web.Url) { UseShellExecute = true }));
         menu.Items.Add("Forget saved login", null, (_, _) => { LoginStore.Forget(); _status.Text = "Saved password removed."; });
+        menu.Items.Add(new ToolStripSeparator()); menu.Items.Add(ThemeItem());
         menu.Show(_info, at);
     }
 
@@ -255,6 +260,7 @@ sealed class ClassicMainForm : ChromeForm
         var auto = new ToolStripMenuItem("Auto-open favorites on score change") { Checked = _opt.AutoOpenOnScore, CheckOnClick = true };
         auto.CheckedChanged += (_, _) => { _opt.AutoOpenOnScore = auto.Checked; _opt.Save(); };
         menu.Items.Add(auto);
+        menu.Items.Add(ThemeItem());
         menu.Show(Cursor.Position);
     }
 
@@ -265,15 +271,42 @@ sealed class ClassicMainForm : ChromeForm
             var cm = new ContextMenuStrip();
             var sport = string.IsNullOrEmpty(n.Name) ? SportId : n.Name;
             cm.Items.Add(_host.IsFavoriteCompetition(comp.Id) ? "Remove competition from favorites" : "Add competition to favorites", null, (_, _) => _host.ToggleFavoriteCompetition(comp, sport));
+            cm.Items.Add(new ToolStripSeparator()); cm.Items.Add(ThemeItem());
             cm.Show(_tree, at);
             return;
         }
-        if (SelectedEvent() is not { } ev) return;
+        if (SelectedEvent() is not { } ev) { ThemeMenu().Show(_tree, at); return; }
         var menu = new ContextMenuStrip();
         menu.Items.Add(_host.IsFavorite(ev.Id) ? "Remove from favorites" : "Add to favorites", null, (_, _) => _host.ToggleFavorite(ev, SportId));
         menu.Items.Add("Open ladder", null, async (_, _) => await OpenLadder());
         menu.Items.Add("Open card only", null, async (_, _) => await OpenLadder(cardOnly: true));
+        menu.Items.Add(new ToolStripSeparator()); menu.Items.Add(ThemeItem());
         menu.Show(_tree, at);
+    }
+
+    ToolStripMenuItem ThemeItem()
+    {
+        var item = new ToolStripMenuItem("Dark mode") { Checked = Cl.Dark };
+        item.Click += (_, _) => { Cl.Dark = !Cl.Dark; _opt.ClassicDark = Cl.Dark; _opt.Save(); ApplyTheme(); };
+        return item;
+    }
+
+    ContextMenuStrip ThemeMenu() { var m = new ContextMenuStrip(); m.Items.Add(ThemeItem()); return m; }
+
+    [System.Runtime.InteropServices.DllImport("uxtheme.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)] static extern int SetWindowTheme(IntPtr hwnd, string app, string? list);
+
+    /// <summary>Applies the light or dark palette to the navigator (the ladders keep the original light colours).</summary>
+    void ApplyTheme(ClassicSection? nav = null)
+    {
+        var bg = Cl.Panel;
+        BackColor = bg;
+        foreach (var c in new Control[] { _info, _sportHead, _filters, _status, _tree }) c.BackColor = bg;
+        _status.ForeColor = Cl.Ink; _tree.ForeColor = Cl.Ink;
+        _tree.LineColor = Cl.Dark ? Color.FromArgb(0x6A, 0x76, 0x7E) : Color.Black;
+        foreach (Control c in Controls) if (c is ClassicSection s) s.Body.BackColor = bg;
+        if (_tree.IsHandleCreated) SetWindowTheme(_tree.Handle, Cl.Dark ? "DarkMode_Explorer" : "Explorer", null);
+        else _tree.HandleCreated += (_, _) => SetWindowTheme(_tree.Handle, Cl.Dark ? "DarkMode_Explorer" : "Explorer", null);
+        foreach (var c in new Control[] { _info, _sportHead, _filters, _tree }) c.Invalidate();
     }
 
     EventNode? SelectedEvent() => _tree.SelectedNode switch
@@ -292,8 +325,8 @@ sealed class ClassicMainForm : ChromeForm
         // the tree measures bold nodes with the regular font, so size the highlight and text from the real font
         var size = TextRenderer.MeasureText(e.Graphics, e.Node.Text, font, new Size(int.MaxValue, e.Bounds.Height), TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
         var r = new Rectangle(e.Bounds.X, e.Bounds.Y, size.Width + 4, e.Bounds.Height);
-        using (var bg = new SolidBrush(sel ? Cl.TreeSelect : _tree.BackColor)) e.Graphics.FillRectangle(bg, r);
-        TextRenderer.DrawText(e.Graphics, e.Node.Text, font, r, Color.Black, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.VerticalCenter | TextFormatFlags.Left);
+        using (var bg = new SolidBrush(sel ? Cl.Sel : _tree.BackColor)) e.Graphics.FillRectangle(bg, r);
+        TextRenderer.DrawText(e.Graphics, e.Node.Text, font, r, Cl.Ink, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.VerticalCenter | TextFormatFlags.Left);
     }
 
     // ---- images ---------------------------------------------------------------------------------------------

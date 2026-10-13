@@ -29,6 +29,7 @@ public sealed class Options
     public double ClassicLayStake { get; set; } = 10;
     public bool ClassicLayLiability { get; set; } = false;      // lay "stake" box means liability instead of stake
     public int ClassicScale { get; set; } = 150;
+    public bool ClassicDark { get; set; } = false;        // dark navigator window
     // Classic automation (never saved as armed: it always starts off)
     public string AutoSide { get; set; } = "LAY";
     public double AutoAmount { get; set; } = 2;

@@ -19,6 +19,13 @@ static class Cl
     public static readonly Color GreenRow = Color.FromArgb(0x98, 0xFB, 0x98), CountRow = Color.FromArgb(0x90, 0xEE, 0x90), Orange = Color.FromArgb(0xFF, 0xA0, 0x7A);
     public static readonly Color TreeSelect = Color.FromArgb(0xEF, 0xCE, 0x86), ClockBlue = Color.FromArgb(0, 0, 0xFF);
 
+    /// <summary>Dark mode applies to the navigator window; the ladders keep their light, Geek's Toy colours.</summary>
+    public static bool Dark { get; set; }
+    public static Color Panel => Dark ? Color.FromArgb(0x1F, 0x27, 0x2C) : Light;
+    public static Color Ink => Dark ? Color.FromArgb(0xE8, 0xEB, 0xEC) : Color.Black;
+    public static Color Sel => Dark ? Color.FromArgb(0x3A, 0x57, 0x66) : TreeSelect;
+    public static Color Edge => Dark ? Color.FromArgb(0x3A, 0x45, 0x4C) : Color.FromArgb(0xC0, 0xC0, 0xC0);
+
     public static readonly Font Ui = new("Tahoma", 8.25f), UiBold = new("Tahoma", 8.25f, FontStyle.Bold);
     public static readonly Font Name = new("Tahoma", 9f, FontStyle.Bold), Scale = new("Tahoma", 9.75f);
     public static readonly Font SportHead = new("Tahoma", 12f, FontStyle.Bold), Filter = new("Tahoma", 10f, FontStyle.Bold), Clock = new("Tahoma", 20f, FontStyle.Bold);
