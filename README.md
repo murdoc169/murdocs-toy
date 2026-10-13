@@ -43,7 +43,7 @@ The app opens in the **Classic** interface. The earlier *Modern dark/light* inte
 
 - **Tree explorer**: sport > competition > match > markets, loaded as you expand. **Country flags** mark every competition and match. Search finds matches by name; the *In-play* filter works for every sport.
 - **Match label with score and volume**: `Porto 0 - 1 Benfica (145 643 €)`. Live score between the teams (when a score relay is connected), matched volume after, thousands separated by spaces.
-- **Pop-up ladders**: double-click a match to open its Match Odds, one ladder per runner side by side. Open as many as you like.
+- **Pop-up ladders**: click a match to open its Match Odds, one ladder per runner side by side. Open as many as you like.
 - **One-click betting**, stake buttons you can edit, custom stakes, cancel-all, bet persistence (lapse / persist / SP), one-click or confirm-every-bet.
 - **Position and green up**: profit if each runner wins or loses, and a button that places the hedge bet locking the same profit either way.
 - **Favorites** (matches and competitions): star a match (★ Favorite, right-click, or ☆ in the browser) or a whole **competition** such as AFC Champions League or Primeira Liga (right-click it in the desktop tree, press ★ Favorite on it, or ☆ next to it in the browser). Favorites sit in a ★ Favorites section at the top of the tree; a favorite competition expands to its matches. Tick **Auto-open favorites on score change** and the ladder of any starred match, or of any match in a starred competition, opens (or is brought to the front) whenever its score changes, including a goal being taken away by VAR.
@@ -69,7 +69,7 @@ The app opens in the **Classic** interface. The earlier *Modern dark/light* inte
 
 ## Install (Windows)
 
-Download `MurdocsToy-Setup-0.6.0.exe` from the [Releases](../../releases) page and run it. It needs no .NET install, adds a Start Menu entry and an optional desktop shortcut, and can be removed from *Apps & features*. Windows SmartScreen may warn because the installer is unsigned.
+Download `MurdocsToy-Setup-0.6.1.exe` from the [Releases](../../releases) page and run it. It needs no .NET install, adds a Start Menu entry and an optional desktop shortcut, and can be removed from *Apps & features*. Windows SmartScreen may warn because the installer is unsigned.
 
 On first launch enter your Betfair username, password and application key, and pick an interface.
 
@@ -78,7 +78,7 @@ To build the installer yourself:
 ```bash
 dotnet publish src/MurdocsToy.Desktop -c Release -r win-x64 --self-contained true \
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o dist/app
-ISCC.exe installer/MurdocsToy.iss      # needs Inno Setup 6 -> dist/MurdocsToy-Setup-0.6.0.exe
+ISCC.exe installer/MurdocsToy.iss      # needs Inno Setup 6 -> dist/MurdocsToy-Setup-0.6.1.exe
 ```
 
 ## Configure

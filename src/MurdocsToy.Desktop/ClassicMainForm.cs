@@ -72,7 +72,17 @@ sealed class ClassicMainForm : Form
         _tree.BeforeExpand += (_, e) => { _ = ExpandLoad(e.Node!); };
         _tree.AfterExpand += (_, e) => { _ = AutoExpandSingle(e.Node!); };
         _tree.NodeMouseDoubleClick += async (_, e) => { if (e.Node.Tag is MarketCatalogEntry || e.Node.Tag is EventNode) { _tree.SelectedNode = e.Node; await OpenLadder(); } };
-        _tree.NodeMouseClick += (_, e) => { if (e.Button == MouseButtons.Right) { _tree.SelectedNode = e.Node; NodeMenu(e.Node, e.Location); } };
+        _tree.NodeMouseClick += async (_, e) =>
+        {
+            if (e.Button == MouseButtons.Right) { _tree.SelectedNode = e.Node; NodeMenu(e.Node, e.Location); return; }
+            // one click on a match (or one of its markets) opens its ladder; the +/- expander only expands
+            if (e.Button == MouseButtons.Left && e.Node.Tag is EventNode or MarketCatalogEntry
+                && _tree.HitTest(e.Location).Location is TreeViewHitTestLocations.Label or TreeViewHitTestLocations.Image)
+            {
+                _tree.SelectedNode = e.Node;
+                await OpenLadder();
+            }
+        };
 
         _host.Status += s => _status.Text = s;
         _host.FavoritesChanged += SyncFavorites;
