@@ -39,6 +39,7 @@ sealed class LadderForm : Form
         BuildLadders();
         BuildTopBar();
         ApplyOptions();
+        Theme.Apply(this);
 
         _timer.Tick += async (_, _) => await Poll();
         Shown += async (_, _) => { await Poll(); _timer.Start(); };
@@ -82,17 +83,23 @@ sealed class LadderForm : Form
         var cancelAll = new Button { Text = "Cancel all", Width = 80, Height = 28 };
         cancelAll.Click += async (_, _) => await CancelAll();
         var opts = new Button { Text = "Options", Width = 70, Height = 28 };
-        opts.Click += (_, _) => { using var f = new OptionsForm(_opt); if (f.ShowDialog(this) == DialogResult.OK) { _opt.Save(); BuildTopBar(); ApplyOptions(); foreach (var l in _ladders) l.Ladder.Invalidate(); } };
+        opts.Click += (_, _) => { using var f = new OptionsForm(_opt); Theme.Apply(f); if (f.ShowDialog(this) == DialogResult.OK) { _opt.Save(); BuildTopBar(); ApplyOptions(); foreach (var l in _ladders) l.Ladder.Invalidate(); } };
         var onTop = new CheckBox { Text = "On top", AutoSize = true, Checked = _opt.AlwaysOnTop, Padding = new Padding(8, 4, 0, 0) };
         onTop.CheckedChanged += (_, _) => TopMost = onTop.Checked;
         _top.Controls.AddRange(new Control[] { cancelAll, opts, onTop });
+        Theme.Apply(_top);
         Mark();
     }
 
     void Mark()
     {
         foreach (Control c in _top.Controls)
-            if (c is Button { Tag: double s }) { bool on = Math.Abs(s - _stake) < 1e-9; c.BackColor = on ? Color.Gold : SystemColors.Control; ((Button)c).UseVisualStyleBackColor = !on; }
+            if (c is Button { Tag: double s } b)
+            {
+                bool on = Math.Abs(s - _stake) < 1e-9;
+                b.FlatStyle = FlatStyle.Flat; b.UseVisualStyleBackColor = false; b.FlatAppearance.BorderColor = Theme.Line;
+                b.BackColor = on ? Color.Gold : Theme.Panel; b.ForeColor = on ? Color.Black : Theme.Text;
+            }
     }
 
     void ApplyOptions()
@@ -152,9 +159,18 @@ sealed class LadderForm : Form
         BeginInvoke(() => { _flashUntil = DateTime.UtcNow.AddSeconds(20); _lastMsg = a.Text; ShowScore(); });
     }
 
+
+    /// <summary>With a delayed app key the prices on screen can be minutes old, so every bet is confirmed, whatever the one-click setting.</summary>
+    static bool Confirm(bool delayed, bool askAlways, string question)
+    {
+        if (!delayed && !askAlways) return true;
+        var text = delayed ? question + "\n\nPrices are DELAYED (delayed app key): the real market may have moved. Place this bet anyway?" : question;
+        return MessageBox.Show(text, delayed ? "Delayed prices" : "Confirm", MessageBoxButtons.YesNo, delayed ? MessageBoxIcon.Warning : MessageBoxIcon.Question) == DialogResult.Yes;
+    }
+
     async Task Place(string side, RunnerCatalog r, double price)
     {
-        if (_opt.ConfirmBets && MessageBox.Show($"{side} {r.RunnerName} @ {price:0.##} for {_stake:0.00}?", "Confirm", MessageBoxButtons.YesNo) != DialogResult.Yes) return;
+        if (!Confirm(_book?.IsMarketDataDelayed == true, _opt.ConfirmBets, $"{side} {r.RunnerName} @ {price:0.##} for {_stake:0.00}?")) return;
         await Send(side, r, price, _stake);
     }
 

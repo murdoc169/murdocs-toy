@@ -35,6 +35,9 @@ public static class Liquidity
         return Math.Round(sum * 100, 1);
     }
 
+    /// <summary>Whole units with a space between thousands: 302 293 or 1 302 212.</summary>
+    public static string Spaced(double v) => ((long)Math.Round(v)).ToString("N0", CultureInfo.InvariantCulture).Replace(',', ' ');
+
     public static string Short(double v) =>
         v >= 1e6 ? (v / 1e6).ToString("0.#", CultureInfo.InvariantCulture) + "m"
         : v >= 1e3 ? (v / 1e3).ToString("0.#", CultureInfo.InvariantCulture) + "k" : v.ToString("0", CultureInfo.InvariantCulture);

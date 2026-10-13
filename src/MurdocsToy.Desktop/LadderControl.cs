@@ -70,7 +70,8 @@ sealed class LadderControl : Control
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
-        g.Clear(Color.White);
+        g.Clear(Theme.Window);
+        using var text = new SolidBrush(Theme.Text); using var mute = new SolidBrush(Theme.Mute);
         using var font = new Font("Segoe UI", _opt.FontSize);
         using var bold = new Font("Segoe UI", _opt.FontSize, FontStyle.Bold);
         using var big = new Font("Segoe UI", _opt.FontSize + 2, FontStyle.Bold);
@@ -102,11 +103,12 @@ sealed class LadderControl : Control
         int[] x = new int[Cols.Length + 1];
         for (int i = 0; i < Cols.Length; i++) x[i + 1] = x[i] + (int)(Cols[i] * Width);
         x[^1] = Width;
-        using var line = new Pen(Color.FromArgb(215, 215, 215));
-        using var backLight = new SolidBrush(back); using var layLight = new SolidBrush(lay);
-        using var backPale = new SolidBrush(ControlPaint.Light(back, 0.6f)); using var layPale = new SolidBrush(ControlPaint.Light(lay, 0.6f));
-        using var gold = new SolidBrush(Color.Gold); using var grey = new SolidBrush(Color.FromArgb(235, 235, 235));
-        using var volBar = new SolidBrush(Color.FromArgb(200, 220, 200));
+        using var line = new Pen(Theme.Line);
+        using var backLight = new SolidBrush(Theme.Cell(back, true)); using var layLight = new SolidBrush(Theme.Cell(lay, true));
+        using var backPale = new SolidBrush(Theme.Cell(back, false)); using var layPale = new SolidBrush(Theme.Cell(lay, false));
+        using var gold = new SolidBrush(Color.Gold); using var grey = new SolidBrush(Theme.Dark ? Color.FromArgb(34, 40, 50) : Color.FromArgb(235, 235, 235));
+        using var volBar = new SolidBrush(Theme.Dark ? Color.FromArgb(38, 66, 52) : Color.FromArgb(200, 220, 200));
+        using var onGold = new SolidBrush(Color.Black);
         double bestBack = r.Ex.AvailableToBack?.FirstOrDefault()?.Price ?? 0, bestLay = r.Ex.AvailableToLay?.FirstOrDefault()?.Price ?? 0;
 
         int y = HeaderH;
@@ -121,17 +123,18 @@ sealed class LadderControl : Control
             {
                 bool isBack = mine[0].Side == "BACK";
                 g.FillRectangle(isBack ? backLight : layLight, Cell(0));
-                g.DrawString(mine.Sum(o => o.SizeRemaining).ToString("0.00"), bold, Brushes.Black, Cell(0), centreFmt);
+                g.DrawString(mine.Sum(o => o.SizeRemaining).ToString("0.00"), bold, text, Cell(0), centreFmt);
             }
-            if (backs.TryGetValue(price, out var bs)) { g.FillRectangle(price == bestBack ? backLight : backPale, Cell(1)); g.DrawString(bs.ToString("#,0"), font, Brushes.Black, Cell(1), centreFmt); }
-            if (lays.TryGetValue(price, out var ls)) { g.FillRectangle(price == bestLay ? layLight : layPale, Cell(3)); g.DrawString(ls.ToString("#,0"), font, Brushes.Black, Cell(3), centreFmt); }
+            if (backs.TryGetValue(price, out var bs)) { g.FillRectangle(price == bestBack ? backLight : backPale, Cell(1)); g.DrawString(bs.ToString("#,0"), font, text, Cell(1), centreFmt); }
+            if (lays.TryGetValue(price, out var ls)) { g.FillRectangle(price == bestLay ? layLight : layPale, Cell(3)); g.DrawString(ls.ToString("#,0"), font, text, Cell(3), centreFmt); }
             if (traded.TryGetValue(price, out var tv))
             {
                 var vc = Cell(4); g.FillRectangle(volBar, vc.X, vc.Y + 1, (int)(vc.Width * (tv / maxVol)), vc.Height - 2);
-                g.DrawString(tv.ToString("#,0"), small, Brushes.DimGray, vc, centreFmt);
+                g.DrawString(tv.ToString("#,0"), small, mute, vc, centreFmt);
             }
-            if (r.LastPriceTraded is double ltp && Math.Abs(ltp - price) < 1e-9) g.FillRectangle(gold, Cell(2));
-            g.DrawString(price.ToString("0.##"), bold, Brushes.Black, Cell(2), centreFmt);
+            bool isLtp = r.LastPriceTraded is double ltp && Math.Abs(ltp - price) < 1e-9;
+            if (isLtp) g.FillRectangle(gold, Cell(2));
+            g.DrawString(price.ToString("0.##"), bold, isLtp ? onGold : text, Cell(2), centreFmt);
             g.DrawLine(line, 0, y + _opt.RowHeight - 1, Width, y + _opt.RowHeight - 1);
             y += _opt.RowHeight;
         }

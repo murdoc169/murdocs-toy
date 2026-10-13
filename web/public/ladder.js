@@ -42,6 +42,9 @@ export function greenUp(pos, price) {
   return size < 0.01 ? null : { side: h > 0 ? 'BACK' : 'LAY', size };
 }
 
+/** Whole units with a space between thousands (non-breaking): 302 293, 1 302 212. */
+export const spaced = v => Math.round(v).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+
 /** Compact volume: 950, 12.5k, 1.2m. */
 export const short = v => (v >= 1e6 ? +(v / 1e6).toFixed(1) + 'm' : v >= 1e3 ? +(v / 1e3).toFixed(1) + 'k' : String(Math.round(v)));
 

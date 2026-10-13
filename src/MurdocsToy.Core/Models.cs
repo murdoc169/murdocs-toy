@@ -20,6 +20,7 @@ public record PlaceInstruction(long SelectionId, string Side, double Price, doub
 public record PlaceReport(string Status, string? ErrorCode, string? BetId, double? SizeMatched);
 public record CurrentOrder(string BetId, string MarketId, long SelectionId, string Side, string Status,
     double Price, double Size, double SizeMatched, double SizeRemaining, double AveragePriceMatched = 0);
+public record AccountDetails(string CurrencyCode, string? CountryCode);
 public record AccountFunds(double AvailableToBetBalance, double Exposure);
 
 public class BetfairException(string code, string message) : Exception(message)

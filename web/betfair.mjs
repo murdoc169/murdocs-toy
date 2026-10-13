@@ -76,7 +76,7 @@ export class Betfair {
 
   async events(p) {
     const r = await this.#bet('listEvents', { filter: this.#treeFilter(p) });
-    return r.map(x => ({ id: x.event.id, name: x.event.name, openDate: x.event.openDate, marketCount: x.marketCount }))
+    return r.map(x => ({ id: x.event.id, name: x.event.name, openDate: x.event.openDate, countryCode: x.event.countryCode, marketCount: x.marketCount }))
       .sort((a, b) => (a.openDate ?? '').localeCompare(b.openDate ?? '') || a.name.localeCompare(b.name));
   }
 

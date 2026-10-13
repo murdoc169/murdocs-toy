@@ -97,7 +97,7 @@ public sealed class BetfairClient : IDisposable
                 .OrderBy(e => e.Name).ToList();
     }
 
-    static Dictionary<string, object?> TreeFilter(string eventTypeId, bool inPlayOnly, string? competitionId = null, string? text = null, string? eventId = null)
+    static Dictionary<string, object?> TreeFilter(string eventTypeId, bool inPlayOnly, string? competitionId = null, string? text = null, string? eventId = null, DateTime? from = null, DateTime? to = null)
     {
         var f = new Dictionary<string, object?>
         {
@@ -109,22 +109,22 @@ public sealed class BetfairClient : IDisposable
         };
         // In-play games can have started long ago (tennis, cricket, golf), so in-play searches have no start-time limit.
         // Otherwise: games that started up to 3h ago through the next 2 days.
-        if (!inPlayOnly) f["marketStartTime"] = new { from = DateTime.UtcNow.AddHours(-3).ToString("o"), to = DateTime.UtcNow.AddDays(2).ToString("o") };
+        if (!inPlayOnly) f["marketStartTime"] = new { from = (from ?? DateTime.UtcNow.AddHours(-3)).ToString("o"), to = (to ?? DateTime.UtcNow.AddDays(2)).ToString("o") };
         return f;
     }
 
-    public async Task<List<CompetitionNode>> ListCompetitionsAsync(string eventTypeId, bool inPlayOnly = false, CancellationToken ct = default)
+    public async Task<List<CompetitionNode>> ListCompetitionsAsync(string eventTypeId, bool inPlayOnly = false, DateTime? from = null, DateTime? to = null, CancellationToken ct = default)
     {
-        var r = await Betting<List<JsonNode>>("listCompetitions", new { filter = TreeFilter(eventTypeId, inPlayOnly) }, ct);
+        var r = await Betting<List<JsonNode>>("listCompetitions", new { filter = TreeFilter(eventTypeId, inPlayOnly, from: from, to: to) }, ct);
         return r.Select(x => new CompetitionNode(x["competition"]!["id"]!.ToString(), x["competition"]!["name"]!.ToString(),
                 x["competitionRegion"]?.ToString(), x["marketCount"]?.GetValue<int>() ?? 0))
             .OrderBy(c => c.Name).ToList();
     }
 
     public async Task<List<EventNode>> ListEventsAsync(string eventTypeId, string? competitionId = null, string? text = null,
-        bool inPlayOnly = false, CancellationToken ct = default)
+        bool inPlayOnly = false, DateTime? from = null, DateTime? to = null, CancellationToken ct = default)
     {
-        var r = await Betting<List<JsonNode>>("listEvents", new { filter = TreeFilter(eventTypeId, inPlayOnly, competitionId, text) }, ct);
+        var r = await Betting<List<JsonNode>>("listEvents", new { filter = TreeFilter(eventTypeId, inPlayOnly, competitionId, text, null, from, to) }, ct);
         return r.Select(x => new EventNode(x["event"]!["id"]!.ToString(), x["event"]!["name"]!.ToString(), x["event"]!["countryCode"]?.ToString(),
                 x["event"]!["openDate"]?.GetValue<DateTime>(), x["marketCount"]?.GetValue<int>() ?? 0))
             .OrderBy(e => e.OpenDate).ThenBy(e => e.Name).ToList();
@@ -235,6 +235,12 @@ public sealed class BetfairClient : IDisposable
             o["side"]!.ToString(), o["status"]!.ToString(), o["priceSize"]!["price"]!.GetValue<double>(),
             o["priceSize"]!["size"]!.GetValue<double>(), o["sizeMatched"]?.GetValue<double>() ?? 0,
             o["sizeRemaining"]?.GetValue<double>() ?? 0, o["averagePriceMatched"]?.GetValue<double>() ?? 0)).ToList();
+    }
+
+    public async Task<AccountDetails> GetAccountDetailsAsync(CancellationToken ct = default)
+    {
+        var r = await CallAsync<JsonNode>(AccountUrl, "AccountAPING/v1.0/getAccountDetails", new { }, ct);
+        return new AccountDetails(r["currencyCode"]?.ToString() ?? "EUR", r["countryCode"]?.ToString());
     }
 
     public async Task<AccountFunds> GetAccountFundsAsync(CancellationToken ct = default)

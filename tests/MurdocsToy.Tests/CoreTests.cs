@@ -125,6 +125,12 @@ public class LiveTreeTests
         var comp = comps.OrderByDescending(x => x.MarketCount).First();
         var events = await c.ListEventsAsync(soccer.Id, comp.Id);
         Assert.NotEmpty(events);
+        // the Today/Tomorrow filters: every event returned must start inside the requested window
+        var from = DateTime.Today.AddDays(1).ToUniversalTime(); var to = DateTime.Today.AddDays(2).ToUniversalTime();
+        var tomorrow = await c.ListEventsAsync(soccer.Id, null, null, false, from, to);
+        Assert.NotEmpty(tomorrow);
+        Assert.All(tomorrow, e => Assert.InRange(e.OpenDate!.Value.ToUniversalTime(), from, to));
+
         var markets = await c.ListEventMarketsAsync(events[0].Id);
         Assert.NotEmpty(markets);
         Assert.Equal("Match Odds", markets[0].MarketName);
@@ -176,6 +182,9 @@ public class LiquidityTests
         for (int i = 0; i < 10; i++) t.Add(Book(1000 - i, 1, 1), t0.AddSeconds(i));
         Assert.Equal(3, t.Samples.Count); Assert.Equal(0, t.Last!.MatchedPerMin);
     }
+
+    [Theory] [InlineData(0, "0")] [InlineData(950, "950")] [InlineData(302293, "302 293")] [InlineData(1302212, "1 302 212")] [InlineData(145643.6, "145 644")]
+    public void SpacedThousands(double v, string s) => Assert.Equal(s, Liquidity.Spaced(v));
 
     [Theory] [InlineData(950, "950")] [InlineData(12500, "12.5k")] [InlineData(1_240_000, "1.2m")]
     public void ShortFormat(double v, string s) => Assert.Equal(s, Liquidity.Short(v));

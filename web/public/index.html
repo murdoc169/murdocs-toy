@@ -20,6 +20,7 @@
   .node:hover, .node.sel { background:var(--panel); } .node.sel { color:var(--accent); }
   .node .tw { display:inline-block; width:16px; text-align:center; color:var(--mute); }
   .node small { color:var(--mute); margin-left:6px; }
+  .flag { width:20px; height:15px; vertical-align:-3px; margin-right:6px; border:1px solid #555; object-fit:cover; }
   .node .star { cursor:pointer; margin-right:4px; color:var(--accent); } .node .star:hover { filter:brightness(1.4); }
   .node .score { margin-left:8px; padding:0 6px; border-radius:4px; background:#1d3b57; color:#fff; font-weight:700; font-size:12px; }
   .node.live { font-weight:600; }
@@ -73,10 +74,7 @@
   <section id="markets"></section>
   <section>
     <div id="scoreBar" class="hidden"></div>
-    <div id="liq" style="border-bottom:1px solid var(--line)"></div>
     <table><thead><tr><th style="text-align:left">Runner</th><th>Back 3</th><th>Back 2</th><th>Back</th><th>Lay</th><th>Lay 2</th><th>Lay 3</th><th>Last</th><th>Matched</th></tr></thead><tbody id="runners"></tbody></table>
-    <h3 style="padding:0 10px">Current orders <span class="mute">(click to cancel)</span></h3>
-    <table><tbody id="orders"></tbody></table>
   </section>
   <section style="border:0">
     <aside>
@@ -91,8 +89,8 @@
 <div id="toast"></div>
 
 <script type="module">
-import { window as ticks, LiquidityTracker, short } from './ladder.js';
-import { drawLiquidity } from './liquidity.js';
+import { window as ticks, short, spaced } from './ladder.js';
+import { flagCode, flagImg } from './flags.js';
 import { findLive, matchScore } from './teams.js';
 const $ = id => document.getElementById(id);
 const api = async (path, body) => {
@@ -167,9 +165,9 @@ const inPlay = () => ($('inplay').checked ? 1 : 0);
 const qs = o => new URLSearchParams(o).toString();
 
 /** Tree: competition > match > markets (children load when a node is first opened). */
-function treeNode(label, sub, loader, onPick, onOpen) {
+function treeNode(label, sub, loader, onPick, onOpen, flag) {
   const wrap = el('div'); const row = el('div', 'node'); const tw = el('span', 'tw', loader ? '▸' : '·');
-  row.append(tw, document.createTextNode(label)); if (sub) row.append(el('small', '', sub));
+  row.append(tw); if (flag !== undefined) row.append(flagImg(flag)); row.append(document.createTextNode(label)); if (sub) row.append(el('small', '', sub));
   const kids = el('div', 'kids hidden'); let loaded = false;
   async function toggle() {
     if (!loader) return;
@@ -184,8 +182,7 @@ function treeNode(label, sub, loader, onPick, onOpen) {
   return wrap;
 }
 const popup = id => window.open('ladder.html?marketId=' + encodeURIComponent(id), 'ladder-' + id, 'popup,width=1100,height=760');
-let tracker = new LiquidityTracker();
-function pickMarket(m) { state.market = m; state.book = null; state.sel = null; tracker = new LiquidityTracker(); drawLiquidity($('liq'), tracker); poll(); }
+function pickMarket(m) { state.market = m; state.book = null; state.sel = null; poll(); }
 function marketNode(m) { return treeNode(m.marketName, m.totalMatched > 0 ? short(m.totalMatched) : '', null, () => pickMarket(m), () => popup(m.marketId)); }
 const favs = new Map();   // eventId -> name
 const volumes = {};       // eventId -> matched volume of the match
@@ -196,18 +193,19 @@ function eventLabel(e, m) {
   const parts = e.name.split(/\s+v\s+/i);
   const game = m && parts.length === 2 ? `${parts[0]} ${m.homeScore} - ${m.awayScore} ${parts[1]}` : m ? `${e.name} [${m.homeScore}-${m.awayScore}]` : e.name;
   const when = !m && e.openDate ? new Date(e.openDate).toLocaleString([], { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + '  ' : '';
-  const vol = volumes[e.id] > 0 ? ` (${Math.floor(volumes[e.id])}€)` : '';
+  const vol = volumes[e.id] > 0 ? ` (${spaced(volumes[e.id])} €)` : '';
   return when + game + vol;
 }
 
-function eventNode(e) {
+function eventNode(e, inheritedFlag = null) {
+  const code = flagCode(null, e.countryCode, '') ?? inheritedFlag;
   const n = treeNode('', '', async () => {
     const ms = await api('eventmarkets?' + qs({ eventId: e.id }));
     return ms.map(marketNode);
   }, null, async () => { const ms = await api('eventmarkets?' + qs({ eventId: e.id })); if (ms[0]) popup(ms[0].marketId); });
   const tw = n.row.firstChild, star = el('span', 'star'), lbl = el('span', 'lbl');
   star.title = 'Favorite'; star.onclick = ev => { ev.stopPropagation(); toggleFav(e); };
-  n.row.replaceChildren(tw, star, lbl);
+  n.row.replaceChildren(tw, star, flagImg(code), lbl);
   n.row.dataset.eid = e.id; n.row.dataset.ev = e.name; n.row._e = e;
   lbl.textContent = eventLabel(e, null); star.textContent = favs.has(e.id) ? '★' : '☆';
   return n;
@@ -244,7 +242,7 @@ async function find() {
     const nodes = text
       ? (await api('events?' + qs({ eventTypeId: sportId(), q: text, inPlay: inPlay() }))).map(eventNode)
       : (await api('competitions?' + qs({ eventTypeId: sportId(), inPlay: inPlay() }))).map(c =>
-          treeNode(c.name, `(${c.marketCount})`, async () => (await api('events?' + qs({ eventTypeId: sportId(), competitionId: c.id, inPlay: inPlay() }))).map(eventNode)));
+          treeNode(c.name, `(${c.marketCount})`, async () => (await api('events?' + qs({ eventTypeId: sportId(), competitionId: c.id, inPlay: inPlay() }))).map(e => eventNode(e, flagCode(c.region, null, c.name))), null, null, flagCode(c.region, null, c.name)));
     box.replaceChildren(...(nodes.length ? nodes : [el('div', 'node', 'Nothing found')]));
     renderFavs();
     if (!state.market) autoSelect(box);
@@ -323,10 +321,8 @@ async function poll() {
       state.book = await api('book?marketId=' + encodeURIComponent(state.market.marketId));
       $('delayed').textContent = state.book?.isMarketDataDelayed ? 'DELAYED DATA' : '';
       if (state.sel == null) state.sel = state.book?.runners?.[0]?.selectionId ?? null;
-      if (state.book) { tracker.add(state.book); drawLiquidity($('liq'), tracker); }
       drawRunners(); drawLadder(); paintScores();
     }
-    drawOrders(await api('orders').catch(() => []));
   } catch (e) { toast(e.message); } finally { state.busy = false; }
 }
 
@@ -369,23 +365,14 @@ function drawLadder() {
 
 async function bet(side, selectionId, price) {
   const size = Number($('stake').value);
-  if (!confirm(`${side} ${nameOf(selectionId)} @ ${fmt(price)} for ${size.toFixed(2)}?`)) return;
+  const delayed = state.book?.isMarketDataDelayed === true;
+  if (!confirm(`${side} ${nameOf(selectionId)} @ ${fmt(price)} for ${size.toFixed(2)}?` + (delayed ? '\n\nPrices are DELAYED (delayed app key): the real market may have moved.' : ''))) return;
   try {
     const r = await api('place', { marketId: state.market.marketId, selectionId, side, price, size });
     toast(`Order ${r.status}${r.errorCode ? ' – ' + r.errorCode : ''}`); poll(); funds();
   } catch (e) { toast(e.message + (e.message.includes('PERMISSION') || e.message.includes('INVALID_APP_KEY') ? ' (delayed keys cannot place bets)' : ''), 6000); }
 }
 
-function drawOrders(list) {
-  const body = $('orders'); body.replaceChildren();
-  for (const o of list) {
-    const tr = el('tr', 'runner');
-    tr.append(el('td', 'name', nameOf(o.selectionId)), el('td', o.side === 'BACK' ? 'b' : 'l', o.side), el('td', '', fmt(o.price)),
-      el('td', '', `${o.matched.toFixed(2)}/${o.size.toFixed(2)}`), el('td', '', o.status));
-    if (o.status === 'EXECUTABLE') tr.onclick = async () => { try { await api('cancel', { marketId: o.marketId, betId: o.betId }); poll(); } catch (e) { toast(e.message); } };
-    body.append(tr);
-  }
-}
 boot();
 </script>
 </body>

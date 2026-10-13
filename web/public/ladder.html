@@ -102,7 +102,8 @@ async function poll() {
 function restart() { clearInterval(timer); timer = setInterval(poll, opt.ms); }
 
 async function place(side, r, price, size = opt.stake) {
-  if (opt.confirm && !confirm(`${side} ${nameOf(r.selectionId)} @ ${fmt(price)} for ${size.toFixed(2)}?`)) return;
+  const delayed = book?.isMarketDataDelayed === true;   // delayed app key: prices on screen can be minutes old, so always ask
+  if ((opt.confirm || delayed) && !confirm(`${side} ${nameOf(r.selectionId)} @ ${fmt(price)} for ${size.toFixed(2)}?` + (delayed ? '\n\nPrices are DELAYED (delayed app key): the real market may have moved. Place this bet anyway?' : ''))) return;
   try {
     const x = await api('place', { marketId, selectionId: r.selectionId, side, price, size, persistence: opt.persistence });
     msg = `${side} ${nameOf(r.selectionId)} ${fmt(price)} x${size.toFixed(2)}: ${x.status}${x.errorCode ? ' ' + x.errorCode : ''}`;

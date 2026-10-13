@@ -18,6 +18,11 @@ public sealed class Options
     public bool AutoCentre { get; set; } = true;
     public List<FavoriteEvent> Favorites { get; set; } = new();
     public bool AutoOpenOnScore { get; set; } = false;   // open (or raise) a favorite match's ladder whenever its score changes
+    // Classic interface staking
+    public double ClassicBackStake { get; set; } = 2;
+    public double ClassicLayStake { get; set; } = 10;
+    public bool ClassicLayLiability { get; set; } = false;      // lay "stake" box means liability instead of stake
+    public int ClassicScale { get; set; } = 150;
     public string RelayUrl { get; set; } = "";   // live-score relay, e.g. ws://relay-host:9001 (empty = off)
     public bool MirrorToWeb { get; set; } = true;   // serve the web UI from this app (http://localhost:8080)
     public float FontSize { get; set; } = 9f;
