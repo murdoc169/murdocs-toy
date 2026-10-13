@@ -100,6 +100,7 @@ sealed class MainForm : Form
         FormClosed += (_, _) => _host.Dispose();
         _optBtn.Click += (_, _) => { using var f = new OptionsForm(_opt); Theme.Apply(f); if (f.ShowDialog(this) == DialogResult.OK) { _opt.Save(); _host.StartScores(); } };
         _tree.BeforeExpand += (_, e) => { _ = ExpandLoad(e.Node!); };
+        _tree.AfterExpand += (_, e) => { _ = AutoExpandSingle(e.Node!); };
         _tree.AfterSelect += async (_, e) => await OnPick(e.Node!);
         _tree.NodeMouseDoubleClick += async (_, e) => { _tree.SelectedNode = e.Node; await OpenLadder(); };
         _sports.SelectedIndexChanged += async (_, _) => { if (_sports.Focused) await LoadTree(); };
@@ -220,6 +221,7 @@ sealed class MainForm : Form
                     _tree.Nodes.Add(WithPlaceholder(CompetitionNode_(c, SportId, $"{c.Name} ({c.MarketCount})")));
             SyncFavorites();
             _ = RefreshVolumes();
+            await AutoExpandRoots();
             Say(_tree.Nodes.Count <= 1 ? "Nothing found" : $"{_tree.Nodes.Count} {(text != null ? "matches" : "competitions")}");
         }
         catch (Exception ex) { Say(ex.Message); }
@@ -271,6 +273,26 @@ foreach (var fc in _opt.FavoriteCompetitions)
         RefreshScores();
     }
 
+
+    /// <summary>When a level has exactly one real choice, open it, and keep going down while each level has a single choice.</summary>
+    async Task AutoExpandSingle(TreeNode n)
+    {
+        var kids = n.Nodes.Cast<TreeNode>().Where(k => k.Tag != Placeholder).ToList();
+        if (kids.Count != 1) return;
+        var k = kids[0];
+        if (k.Tag is not (CompetitionNode or EventNode)) return;     // markets are leaves
+        k.Expand(); await ExpandLoad(k);
+        await AutoExpandSingle(k);
+    }
+
+    async Task AutoExpandRoots()
+    {
+        var roots = _tree.Nodes.Cast<TreeNode>().Where(x => x.Tag is CompetitionNode or EventNode).ToList();
+        if (roots.Count != 1) return;
+        roots[0].Expand(); await ExpandLoad(roots[0]);
+        await AutoExpandSingle(roots[0]);
+    }
+
     /// <summary>Loads a node's children once (events of a competition, markets of a match).</summary>
     Task ExpandLoad(TreeNode n)
     {
@@ -296,6 +318,7 @@ foreach (var fc in _opt.FavoriteCompetitions)
             n.Nodes.Clear();
             foreach (var k in kids) n.Nodes.Add(k);
             if (n.Tag is CompetitionNode) _ = RefreshVolumes();
+            _ = AutoExpandSingle(n);
         }
         catch (Exception ex) { Say(ex.Message); n.Nodes.Clear(); WithPlaceholder(n); _loads.Remove(n); }
     }

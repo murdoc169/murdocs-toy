@@ -158,7 +158,7 @@ public sealed class BetfairClient : IDisposable
         var r = await Betting<List<MarketCatalogEntry>>("listMarketCatalogue", new
         {
             filter = new { marketIds = new[] { marketId } },
-            marketProjection = new[] { "EVENT", "MARKET_START_TIME", "RUNNER_DESCRIPTION" },
+            marketProjection = new[] { "EVENT", "EVENT_TYPE", "MARKET_START_TIME", "RUNNER_DESCRIPTION" },
             maxResults = 1,
         }, ct);
         return r.FirstOrDefault();
@@ -170,7 +170,7 @@ public sealed class BetfairClient : IDisposable
         var r = await Betting<List<MarketCatalogEntry>>("listMarketCatalogue", new
         {
             filter = new { eventIds = new[] { eventId } },
-            marketProjection = new[] { "EVENT", "MARKET_START_TIME", "RUNNER_DESCRIPTION" },
+            marketProjection = new[] { "EVENT", "EVENT_TYPE", "MARKET_START_TIME", "RUNNER_DESCRIPTION" },
             sort = "MAXIMUM_TRADED",
             maxResults = 200,
         }, ct);
@@ -192,7 +192,7 @@ public sealed class BetfairClient : IDisposable
         return await Betting<List<MarketCatalogEntry>>("listMarketCatalogue", new
         {
             filter,
-            marketProjection = new[] { "EVENT", "MARKET_START_TIME", "RUNNER_DESCRIPTION" },
+            marketProjection = new[] { "EVENT", "EVENT_TYPE", "MARKET_START_TIME", "RUNNER_DESCRIPTION" },
             sort = "FIRST_TO_START",
             maxResults = max,
         }, ct);

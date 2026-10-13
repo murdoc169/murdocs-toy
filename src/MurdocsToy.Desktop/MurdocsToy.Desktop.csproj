@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>MurdocsToy</AssemblyName>
-    <Version>0.4.3</Version>
+    <Version>0.5.0</Version>
     <Product>Murdoc's Toy</Product>
     <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
@@ -15,6 +15,7 @@
     <EmbeddedResource Include="..\..\web\public\flags\*.*" LogicalName="web/flags/%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2592.51" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
     <ProjectReference Include="..\MurdocsToy.Core\MurdocsToy.Core.csproj" />
   </ItemGroup>

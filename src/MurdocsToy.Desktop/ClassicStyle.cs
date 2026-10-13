@@ -189,6 +189,8 @@ sealed class ClassicSection : Panel
 sealed class ClassicClock : Control
 {
     public bool Online { get; set; }
+    public event Action? IconClicked;
+    readonly Rectangle _icon = new(2, 6, 26, 30);
     public Color Digits { get; set; } = Cl.ClockBlue;
 
     public ClassicClock()
@@ -197,10 +199,17 @@ sealed class ClassicClock : Control
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
     }
 
+    bool _hover;
+    protected override void OnMouseMove(MouseEventArgs e) { bool h = _icon.Contains(e.Location); if (h != _hover) { _hover = h; Cursor = h ? Cursors.Hand : Cursors.Default; Invalidate(); } }
+    protected override void OnMouseLeave(EventArgs e) { if (_hover) { _hover = false; Cursor = Cursors.Default; Invalidate(); } }
+    protected override void OnMouseDown(MouseEventArgs e) { if (_icon.Contains(e.Location)) IconClicked?.Invoke(); }
+
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics; g.Clear(Cl.Light); g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.FillRectangle(Brushes.Turquoise, 6, 10, 16, 12); g.DrawRectangle(Pens.Black, 6, 10, 15, 11); g.FillRectangle(Brushes.Black, 11, 23, 6, 2);
+        if (_hover) { using var h = new SolidBrush(Color.FromArgb(215, 226, 232)); g.FillRectangle(h, _icon); g.DrawRectangle(Pens.SteelBlue, _icon); }
+        g.FillRectangle(Brushes.Turquoise, 8, 10, 16, 12); g.DrawRectangle(Pens.Black, 8, 10, 15, 11); g.FillRectangle(Brushes.Black, 13, 23, 6, 2);
+        using (var tri = new SolidBrush(Color.FromArgb(0xD0, 0x20, 0x20))) g.FillPolygon(tri, new Point[] { new(13, 12), new(13, 20), new(19, 16) });   // play
         using var light = new SolidBrush(Online ? Color.LimeGreen : Color.Gray);
         g.FillEllipse(light, Width - 24, 12, 16, 16); g.DrawEllipse(Pens.Black, Width - 24, 12, 15, 15);
         TextRenderer.DrawText(g, Text, Cl.Clock, new Rectangle(28, 0, Width - 56, Height), Digits,

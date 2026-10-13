@@ -67,6 +67,7 @@ sealed class ClassicMainForm : Form
         _filters.MouseDown += FilterClick;
         _tree.DrawNode += DrawNode;
         _tree.BeforeExpand += (_, e) => { _ = ExpandLoad(e.Node!); };
+        _tree.AfterExpand += (_, e) => { _ = AutoExpandSingle(e.Node!); };
         _tree.NodeMouseDoubleClick += async (_, e) => { if (e.Node.Tag is MarketCatalogEntry || e.Node.Tag is EventNode) { _tree.SelectedNode = e.Node; await OpenLadder(); } };
         _tree.NodeMouseClick += (_, e) => { if (e.Button == MouseButtons.Right) { _tree.SelectedNode = e.Node; NodeMenu(e.Node, e.Location); } };
 
@@ -228,6 +229,7 @@ sealed class ClassicMainForm : Form
         var menu = new ContextMenuStrip();
         menu.Items.Add(_host.IsFavorite(ev.Id) ? "Remove from favorites" : "Add to favorites", null, (_, _) => _host.ToggleFavorite(ev));
         menu.Items.Add("Open ladder", null, async (_, _) => await OpenLadder());
+        menu.Items.Add("Open card only", null, async (_, _) => await OpenLadder(cardOnly: true));
         menu.Show(_tree, at);
     }
 
@@ -324,6 +326,7 @@ sealed class ClassicMainForm : Form
             }
             SyncFavorites();
             _ = RefreshVolumes();
+            await AutoExpandRoots();
             _status.Text = _tree.Nodes.Count <= 1 && _scope != Scope.Favorites ? (_scope == Scope.InPlay ? "Nothing in-play right now" : "Nothing found") : "";
             RefreshLabels();
         }
@@ -339,6 +342,26 @@ sealed class ClassicMainForm : Form
 
     TreeNode EventTreeNode(EventNode e, string? flag) =>
         WithPlaceholder(Node(_host.EventLabel(e, null, withTime: true, shortTime: true), e, null, "pitch"));
+
+
+    /// <summary>When a level has exactly one real choice, open it, and keep going down while each level has a single choice.</summary>
+    async Task AutoExpandSingle(TreeNode n)
+    {
+        var kids = n.Nodes.Cast<TreeNode>().Where(k => k.Tag != Placeholder).ToList();
+        if (kids.Count != 1) return;
+        var k = kids[0];
+        if (k.Tag is not (CompetitionNode or EventNode) && !(k.Tag is string t && t == "country")) return;     // markets are leaves
+        k.Expand(); await ExpandLoad(k);
+        await AutoExpandSingle(k);
+    }
+
+    async Task AutoExpandRoots()
+    {
+        var roots = _tree.Nodes.Cast<TreeNode>().Where(x => x.Tag is CompetitionNode or EventNode || x.Tag is string t && t == "country").ToList();
+        if (roots.Count != 1) return;
+        roots[0].Expand(); await ExpandLoad(roots[0]);
+        await AutoExpandSingle(roots[0]);
+    }
 
     Task ExpandLoad(TreeNode n)
     {
@@ -364,6 +387,7 @@ sealed class ClassicMainForm : Form
             foreach (var k in kids) n.Nodes.Add(k);
             if (n.Tag is CompetitionNode) _ = RefreshVolumes();
             RefreshLabels();
+            _ = AutoExpandSingle(n);
         }
         catch (Exception ex) { _status.Text = ex.Message; n.Nodes.Clear(); WithPlaceholder(n); _loads.Remove(n); }
     }
@@ -427,11 +451,11 @@ sealed class ClassicMainForm : Form
         return null;
     }
 
-    async Task OpenLadder()
+    async Task OpenLadder(bool cardOnly = false)
     {
         var m = await ResolveMarket(_tree.SelectedNode);
         if (m == null) { _status.Text = "Select a match or market first"; return; }
-        _host.ShowLadder(m, this);
+        _host.ShowLadder(m, this, cardOnly);
     }
 
     /// <summary>Opens the first match found (used by --smoke / --open-ladder).</summary>

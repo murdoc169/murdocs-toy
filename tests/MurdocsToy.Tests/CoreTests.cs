@@ -248,3 +248,72 @@ public class LiveScoreTests
         Assert.Empty(f.Matches); Assert.Null(f.Find("A v B"));
     }
 }
+
+public class AutoBetTests
+{
+    static Runner R(long id, double? back, double? lay, double? ltp = 2, string status = "ACTIVE") => new(id, status, ltp, 0, new ExchangePrices(
+        back == null ? new() : new() { new(back.Value, 50) }, lay == null ? new() : new() { new(lay.Value, 50) }, null));
+
+    static MarketBook Book(params Runner[] r) => new("1.1", "OPEN", false, false, 0, r.ToList());
+    static AutoBetSettings Best(string side, double amount, int offset = 0, bool liab = false) => new(side, amount, liab, "BEST", offset);
+    static AutoBetSettings Last(string side, double amount, int offset = 0, bool liab = false) => new(side, amount, liab, "LAST", offset);
+
+    [Fact]
+    public void BestBasisLaysAtTheBestLayPriceOfEachSelection()
+    {
+        var plan = AutoBet.Plan(Book(R(1, 1.9, 2.0), R(2, 3.0, 3.05), R(3, 4.0, 4.1)), new long[] { 1, 2, 3 }, Best("LAY", 10));
+        Assert.Equal(new[] { 2.0, 3.05, 4.1 }, plan.Select(p => p.Price));
+        Assert.Equal(10 * (1.0 + 2.05 + 3.1), AutoBet.WorstCase(plan), 2);                // liability of each lay
+    }
+
+    [Fact]
+    public void LastBasisUsesTheLastTradedPriceNotTheQueue()
+    {
+        var b = Book(R(1, 1.9, 2.0, ltp: 1.95), R(2, 3.0, 3.05, ltp: 3.2));
+        Assert.Equal(new[] { 1.95, 3.2 }, AutoBet.Plan(b, new long[] { 1, 2 }, Last("LAY", 5)).Select(p => p.Price));
+        Assert.Equal(new[] { 1.95, 3.2 }, AutoBet.Plan(b, new long[] { 1, 2 }, Last("BACK", 5)).Select(p => p.Price));
+    }
+
+    [Fact]
+    public void OffsetMovesAlongThePriceLadderInTicks()
+    {
+        var b = Book(R(1, 1.9, 2.0, ltp: 2.0));
+        Assert.Equal(2.04, AutoBet.Plan(b, new long[] { 1 }, Last("LAY", 5, 2)).Single().Price, 2);     // +2 ticks: 2.00 -> 2.02 -> 2.04
+        Assert.Equal(1.98, AutoBet.Plan(b, new long[] { 1 }, Last("BACK", 5, -2)).Single().Price, 2);   // -2 ticks
+        Assert.Equal(2.0, AutoBet.Plan(b, new long[] { 1 }, Last("LAY", 5, 0)).Single().Price, 2);
+        var wide = Book(R(1, 5.0, 5.2, ltp: 5.0));                                                       // ticks get wider up the ladder
+        Assert.Equal(5.2, AutoBet.Plan(wide, new long[] { 1 }, Last("LAY", 5, 2)).Single().Price, 2);   // 4-6 steps by 0.1
+    }
+
+    [Fact]
+    public void NoLastPriceFallsBackToTheBestPrice() =>
+        Assert.Equal(2.0, AutoBet.Plan(Book(R(1, 1.9, 2.0, ltp: null)), new long[] { 1 }, Last("LAY", 5)).Single().Price, 2);
+
+    [Fact]
+    public void LiabilityModeSizesTheStakeFromThePrice()
+    {
+        var bet = AutoBet.Plan(Book(R(1, 3.0, 3.0, ltp: 3.0)), new long[] { 1 }, Last("LAY", 20, 0, liab: true)).Single();
+        Assert.Equal(10, bet.Size);                         // 20 liability at 3.0 = stake 10
+        Assert.Equal(20, bet.Risk, 2);
+    }
+
+    [Fact]
+    public void SkipsUnchosenInactiveAndPricelessSelections()
+    {
+        var plan = AutoBet.Plan(Book(R(1, 2, 2.1), R(2, 3, 3.1, status: "REMOVED"), R(3, 4, null, ltp: null), R(4, 5, 5.1)), new long[] { 1, 2, 3 }, Best("LAY", 10));
+        Assert.Equal(new long[] { 1 }, plan.Select(p => p.SelectionId));                    // 2 removed, 3 has no price at all, 4 not chosen
+    }
+
+    [Fact] public void EmptyPlanHasNoRisk() => Assert.Equal(0, AutoBet.WorstCase(new List<PlannedBet>()));
+}
+
+public class BetfairLinkTests
+{
+    [Theory]
+    [InlineData("1.263764412", "Soccer", "https://www.betfair.com/exchange/plus/football/market/1.263764412")]
+    [InlineData("1.5", "Horse Racing", "https://www.betfair.com/exchange/plus/horse-racing/market/1.5")]
+    [InlineData("1.5", "Tennis", "https://www.betfair.com/exchange/plus/tennis/market/1.5")]
+    [InlineData("1.5", "Ice Hockey", "https://www.betfair.com/exchange/plus/ice-hockey/market/1.5")]
+    [InlineData("1.5", null, "https://www.betfair.com/exchange/plus/football/market/1.5")]
+    public void MarketPage(string id, string? sport, string expected) => Assert.Equal(expected, BetfairLinks.MarketPage(id, sport));
+}

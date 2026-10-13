@@ -27,14 +27,25 @@ public sealed class Options
     public double ClassicLayStake { get; set; } = 10;
     public bool ClassicLayLiability { get; set; } = false;      // lay "stake" box means liability instead of stake
     public int ClassicScale { get; set; } = 150;
+    // Classic automation (never saved as armed: it always starts off)
+    public string AutoSide { get; set; } = "LAY";
+    public double AutoAmount { get; set; } = 2;
+    public bool AutoLiability { get; set; } = false;
+    public bool AutoOnGoal { get; set; } = true;
+    public bool AutoOnSuspend { get; set; } = false;
+    public string AutoBasis { get; set; } = "LAST";      // LAST = last traded price, BEST = best price available
+    public int AutoOffsetTicks { get; set; } = 0;        // ticks along the price ladder from the basis (+ higher odds, - lower odds)
+    public int AutoCooldownSeconds { get; set; } = 60;
+    public int AutoMaxBets { get; set; } = 20;
+    public bool AutoAllowDelayed { get; set; } = false;
+
     public string RelayUrl { get; set; } = "";   // live-score relay, e.g. ws://relay-host:9001 (empty = off)
     public bool MirrorToWeb { get; set; } = true;   // serve the web UI from this app (http://localhost:8080)
     public float FontSize { get; set; } = 9f;
     public string BackColour { get; set; } = "#A0D2FA";
     public string LayColour { get; set; } = "#FABECD";
 
-    static readonly string PathFile = System.IO.Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MurdocsToy", "options.json");
+    static string PathFile => Profile.File("options.json");
 
     public static Options Load()
     {

@@ -9,7 +9,7 @@ Everything uses only Betfair's public, documented [Exchange API-NG](https://betf
 
 ## Interfaces
 
-Choose one in the **Interface** box on the login form (Classic is the default; your choice is remembered; `--ui=dark|light|classic` overrides it).
+Choose one with the **Interface** switch on the login window (Classic is the default; your choice is remembered; `--ui=dark|light|classic` overrides it).
 
 **Modern (dark / light)**: tree explorer on the left, selected market on the right, pop-up ladders. Dark mode includes a dark title bar and dark menus.
 
@@ -17,11 +17,26 @@ Choose one in the **Interface** box on the login form (Classic is the default; y
 
 **Classic**: a dense, traditional trading layout. A narrow navigator window with the account balance, a sport header, a date filter (*Today / Tomorrow / Next 2 days*) and a scope filter (*All / In-play / Favorites*, opening on In-play), and a **country > competition > match > market** tree with flags. Each match opens in a trading window with a **ladder per runner side by side** (name and stake header, position panel, bar-scale strip, summary row, price rows with a grey price column, pink *lay* and blue *back* columns, your own orders, traded volume, a green/red depth bar and order boxes) next to a slate **tools panel**: clock, book percentages, back and lay staking (lay can be stake or liability), bet persistence, *Green up all*, *Cancel all*, market information and a ladder selector. The window title shows the matched amount, e.g. `Viking v Bayern Munich - Match Odds   €233 658`.
 
+![Login](docs/login.png)
+
 ![Classic navigator](docs/classic-main.png)
 
 ![Classic navigator with a favorite competition](docs/classic-favorites.png)
 
 ![Classic trading window](docs/classic-ladder.png)
+
+### Classic extras
+
+- **Card**: minimize a Classic ladder and it turns into a small card: date and time, clock, live score, matched amount, back/lay book percentages and, per selection, the last price with its trend and the three best back and lay prices with the money on each. Press **Open ladder** (or double-click it) to bring the full ladder back. *Open card only* in the navigator's right-click menu opens a market straight into a card.
+
+![Card](docs/classic-card.png)
+
+- **Automation** (below the ladder selector): one switch, **OFF or ON**. When ON, a **goal** (reported by the score relay) or a **suspension** (bets go in the moment the market reopens, since Betfair refuses bets while suspended) places a bet you configure on every ticked selection: back or lay, an amount (or liability for lay), priced from the **last traded price** or the **best available price**, moved a number of **ticks** up or down the Betfair price ladder. It asks you to confirm when you turn it on, showing the worst-case loss, has a cooldown between firings, stops after 20 bets or 3 failures in a row, and refuses to act on delayed prices unless you allow it. It always starts OFF.
+- **Live video panel**: click the little screen in the status panel. A small browser (Edge WebView2) opens inside the ladder window on the market's page on betfair.com; log in to the website there once and Betfair's own player appears for the events your account is eligible for. Shift-click opens your normal browser instead. The app never handles the video stream (Betfair does not offer it through the API).
+- **Hover help**: every control and every region of the ladder explains itself when you hover over it.
+- **Auto-expand**: a tree level with a single choice opens by itself (Modern and Classic).
+
+![Classic tools panel](docs/classic-tools.png)
 
 ## Features
 
@@ -53,7 +68,7 @@ Choose one in the **Interface** box on the login form (Classic is the default; y
 
 ## Install (Windows)
 
-Download `MurdocsToy-Setup-0.4.3.exe` from the [Releases](../../releases) page and run it. It needs no .NET install, adds a Start Menu entry and an optional desktop shortcut, and can be removed from *Apps & features*. Windows SmartScreen may warn because the installer is unsigned.
+Download `MurdocsToy-Setup-0.5.0.exe` from the [Releases](../../releases) page and run it. It needs no .NET install, adds a Start Menu entry and an optional desktop shortcut, and can be removed from *Apps & features*. Windows SmartScreen may warn because the installer is unsigned.
 
 On first launch enter your Betfair username, password and application key, and pick an interface.
 
@@ -62,7 +77,7 @@ To build the installer yourself:
 ```bash
 dotnet publish src/MurdocsToy.Desktop -c Release -r win-x64 --self-contained true \
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o dist/app
-ISCC.exe installer/MurdocsToy.iss      # needs Inno Setup 6 -> dist/MurdocsToy-Setup-0.4.3.exe
+ISCC.exe installer/MurdocsToy.iss      # needs Inno Setup 6 -> dist/MurdocsToy-Setup-0.5.0.exe
 ```
 
 ## Configure

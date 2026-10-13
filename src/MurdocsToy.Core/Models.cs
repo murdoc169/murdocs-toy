@@ -7,8 +7,9 @@ public record EventInfo(string Id, string Name, string? CountryCode, DateTime? O
 public record CompetitionNode(string Id, string Name, string? Region, int MarketCount);
 public record EventNode(string Id, string Name, string? CountryCode, DateTime? OpenDate, int MarketCount);
 public record RunnerCatalog(long SelectionId, string RunnerName, double? SortPriority);
+public record EventTypeInfo(string Id, string Name);
 public record MarketCatalogEntry(string MarketId, string MarketName, DateTime? MarketStartTime,
-    double? TotalMatched, EventInfo? Event, List<RunnerCatalog>? Runners);
+    double? TotalMatched, EventInfo? Event, List<RunnerCatalog>? Runners, EventTypeInfo? EventType = null);
 
 public record PriceSize(double Price, double Size);
 public record ExchangePrices(List<PriceSize>? AvailableToBack, List<PriceSize>? AvailableToLay, List<PriceSize>? TradedVolume);

@@ -25,6 +25,11 @@ sealed class ClassicLadderControl : Control
     public int BarScale { get; set; } = 150;
     public string CurrencySymbol { get; set; } = "€";
 
+    readonly ToolTip _tip = new() { AutoPopDelay = 30000, InitialDelay = 400, ReshowDelay = 100, ShowAlways = true };
+    string _lastTip = "";
+    public string BackStakeText { get; set; } = "";
+    static readonly string NL = Environment.NewLine;
+
     Runner? _runner;
     List<CurrentOrder> _orders = new();
     Position _pos = new(0, 0);
@@ -60,6 +65,50 @@ sealed class ClassicLadderControl : Control
     IEnumerable<double> Prices() => PriceLadder.Window(_centre, Rows / 2, Rows - Rows / 2 - 1);
 
     // ---- input -----------------------------------------------------------------------------------------------
+    /// <summary>What the pointer is over, in plain words.</summary>
+    string HoverText(Point p)
+    {
+        if (_stakeBtn.Contains(p)) return "Pick the back stake from your preset stakes." + NL + "Change the presets in Options.";
+        if (p.Y < HeaderH)
+            return p.X > Width - 70 ? "Your back stake: the amount a click in the blue column bets." + NL + "Change it in Staking & Tools on the right, or press S for presets."
+                                    : "The selection (runner) this ladder shows.";
+        if (_greenBtn.Contains(p)) return "Green up: places the one bet that locks in the same profit whether this selection wins or loses." + NL + "Needs matched bets on it first; asks you to confirm.";
+        if (p.Y < HeaderH + InfoH) return "Your result on this selection from your matched bets:" + NL + "profit if it wins, profit or loss if it loses. Back and Lay are the best prices right now.";
+        int stripY = HeaderH + InfoH;
+        if (p.Y < stripY + ScaleH) return "Bar scale. The coloured bars in the pink and blue columns grow with the money waiting at each price;" + NL + "this number sets how much money a full-length bar stands for. Click a number to change it.";
+        if (p.Y < RowsTop)
+        {
+            var w0 = Cols(); int x1 = w0[0], x2 = x1 + w0[1], x4 = w0[0] + w0[1] + w0[2] + w0[3], x5 = x4 + w0[4], x6 = x5 + w0[5];
+            if (p.X >= x1 && p.X < x2) return "Last traded price: the price of the most recent matched bet on this selection.";
+            if (p.X >= x4 && p.X < x5) return "Weight of money: money waiting in the blue column divided by money waiting in the pink column." + NL + "Above 1 means more people are waiting to back than to lay.";
+            if (p.X >= x6) return "Total matched on this selection.";
+            return "Click here to re-centre the ladder on the last traded price.";
+        }
+        var prices = Prices().ToList(); int row = (p.Y - RowsTop) / RowH;
+        if (row < 0 || row >= prices.Count) return p.Y > RowsTop + prices.Count * RowH ? "Your open bets on this selection. Click one to cancel it." : "";
+        var w = Cols(); int acc = 0, col = 0;
+        for (; col < w.Length; col++) { acc += w[col]; if (p.X < acc) break; }
+        string px = Cl.Price(prices[row]);
+        return col switch
+        {
+            1 => $"Price {px}. Prices move one tick at a time along the Betfair ladder.",
+            2 => $"Your open LAY bets at {px} (stake shown). Click to cancel them.",
+            3 => $"Pink: money waiting to be laid at {px}. Click to LAY here at your lay stake.",
+            4 => $"Blue: money waiting to be backed at {px}. Click to BACK here at your back stake" + (BackStakeText != "" ? $" ({BackStakeText})." : "."),
+            5 => $"Your open BACK bets at {px} (stake shown). Click to cancel them.",
+            6 => $"Money matched at {px}.",
+            7 => "Depth: green = money waiting to back (blue side), red = money waiting to lay (pink side), split by amount.",
+            _ => "",
+        };
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        var text = HoverText(e.Location);
+        if (text != _lastTip) { _lastTip = text; _tip.SetToolTip(this, text == "" ? null : text); }
+    }
+
     protected override void OnMouseWheel(MouseEventArgs e)
     {
         _manual = true;

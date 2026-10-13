@@ -151,10 +151,11 @@ sealed class AppHost : IDisposable
         : new LadderForm(Bf, market, Opt, Privacy, Scores);
 
     /// <summary>Opens the ladder window for a market, or raises it if it is already open.</summary>
-    public void ShowLadder(MarketCatalogEntry market, Form owner)
+    public void ShowLadder(MarketCatalogEntry market, Form owner, bool cardOnly = false)
     {
         if (_ladders.TryGetValue(market.MarketId, out var open) && !open.IsDisposed)
         {
+            if (open is ClassicLadderForm cl) { cl.Raise(); return; }
             if (open.WindowState == FormWindowState.Minimized) open.WindowState = FormWindowState.Normal;
             open.Activate(); open.BringToFront();
             return;
@@ -163,6 +164,7 @@ sealed class AppHost : IDisposable
         _ladders[market.MarketId] = f;
         f.FormClosed += (_, _) => _ladders.Remove(market.MarketId);
         f.Show(owner);
+        if (cardOnly && f is ClassicLadderForm c) c.StartAsCard();
     }
 
     /// <summary>A score changed on the relay: if it is a favorite and auto-open is on, show that match's ladder.</summary>
