@@ -88,6 +88,26 @@ public class WindowEdgeTests
     }
 }
 
+public class LiveInPlayTests
+{
+    [Fact]
+    public async Task InPlayFilterWorksForEverySportAndHasNoStartWindow()
+    {
+        var u = Environment.GetEnvironmentVariable("BETFAIR_USERNAME");
+        var p = Environment.GetEnvironmentVariable("BETFAIR_PASSWORD");
+        var k = Environment.GetEnvironmentVariable("BETFAIR_APP_KEY");
+        if (u == null || p == null || k == null) return;
+        using var c = new BetfairClient(k);
+        await c.LoginAsync(u, p);
+        foreach (var sport in await c.ListEventTypesAsync())
+        {
+            var comps = await c.ListCompetitionsAsync(sport.Id, inPlayOnly: true);   // must not throw for any sport
+            var events = await c.ListEventsAsync(sport.Id, null, null, inPlayOnly: true);
+            Assert.True(comps.Count == 0 || events.Count > 0, sport.Name);
+        }
+    }
+}
+
 public class LiveTreeTests
 {
     [Fact]
@@ -108,5 +128,114 @@ public class LiveTreeTests
         var markets = await c.ListEventMarketsAsync(events[0].Id);
         Assert.NotEmpty(markets);
         Assert.Equal("Match Odds", markets[0].MarketName);
+
+        // per-match volume for the whole level in one go
+        var vols = await c.GetEventVolumesAsync(events.Select(e => e.Id));
+        Assert.NotEmpty(vols);
+        Assert.All(vols, kv => Assert.True(kv.Value > 0));
+        var biggest = markets.Max(m => m.TotalMatched ?? 0);                          // live markets move between the two calls
+        Assert.InRange(vols[events[0].Id], biggest * 0.9, biggest * 1.1 + 1);
+    }
+}
+
+public class LiquidityTests
+{
+    static MarketBook Book(double matched, double backSize, double laySize, double bb = 2.0, double bl = 2.1) => new("1.1", "OPEN", false, false, matched, new()
+    {
+        new Runner(1, "ACTIVE", 2, 0, new ExchangePrices(new() { new(bb, backSize) }, new() { new(bl, laySize) }, null)),
+        new Runner(2, "ACTIVE", 2, 0, new ExchangePrices(new() { new(bb, backSize) }, new() { new(bl, laySize) }, null)),
+        new Runner(3, "REMOVED", 2, 0, new ExchangePrices(new() { new(9, 999) }, new() { new(9, 999) }, null)),
+    });
+
+    [Fact]
+    public void SumsOnlyActiveRunners()
+    {
+        var s = Liquidity.Sample(Book(1000, 50, 70), DateTime.UtcNow);
+        Assert.Equal(100, s.AvailBack); Assert.Equal(140, s.AvailLay); Assert.Equal(1000, s.Matched);
+    }
+
+    [Fact] public void BookPercentages()
+    {
+        Assert.Equal(100, Liquidity.BookPct(Book(0, 1, 1), true));            // 2 runners at 2.0
+        Assert.Equal(95.2, Liquidity.BookPct(Book(0, 1, 1), false));          // 2 runners at 2.1
+    }
+
+    [Fact]
+    public void MatchedRatePerMinute()
+    {
+        var t = new LiquidityTracker(); var t0 = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        t.Add(Book(1000, 1, 1), t0);
+        var snap = t.Add(Book(1500, 1, 1), t0.AddSeconds(30));
+        Assert.Equal(1000, snap.MatchedPerMin);                               // 500 in half a minute
+        Assert.Equal(0, new LiquidityTracker().RatePerMin(t0));
+    }
+
+    [Fact] public void RateNeverNegativeAndHistoryBounded()
+    {
+        var t = new LiquidityTracker { MaxSamples = 3 }; var t0 = DateTime.UtcNow;
+        for (int i = 0; i < 10; i++) t.Add(Book(1000 - i, 1, 1), t0.AddSeconds(i));
+        Assert.Equal(3, t.Samples.Count); Assert.Equal(0, t.Last!.MatchedPerMin);
+    }
+
+    [Theory] [InlineData(950, "950")] [InlineData(12500, "12.5k")] [InlineData(1_240_000, "1.2m")]
+    public void ShortFormat(double v, string s) => Assert.Equal(s, Liquidity.Short(v));
+}
+
+public class LiveScoreTests
+{
+    // Real pairs: Betfair event name vs the relay's (SofaScore) team names.
+    [Theory]
+    [InlineData("Buriram Utd v Beijing Guoan", "Buriram United", "Beijing Guoan")]
+    [InlineData("Cong An Nhan Dan v Kashima", "Công An Hà Nội", "Kashima Antlers")]
+    [InlineData("Viking v Bayern Munich", "Viking FK", "Bayern München")]
+    [InlineData("Moreirense FC U23 v Santa Clara U23", "Moreirense FC U23", "Santa Clara U23")]
+    [InlineData("Galatasaray U19 v Barcelona U19", "Galatasaray U19", "Barcelona U19")]
+    [InlineData("Man Utd v Arsenal", "Manchester United", "Arsenal FC")]
+    public void SameMatchIsRecognised(string betfair, string home, string away) =>
+        Assert.True(TeamMatcher.Score(betfair, home, away) > 0, betfair);
+
+    [Theory]
+    [InlineData("Arsenal v Lille", "Arsenal U19", "Lille U19")]                  // senior vs youth
+    [InlineData("Arsenal v Lille", "Arsenal Women", "Lille Women")]
+    [InlineData("Viking v Bayern Munich", "Bayern Munich", "Viking FK")]          // home/away swapped
+    [InlineData("Arsenal v Chelsea", "Liverpool", "Everton")]
+    [InlineData("Man Utd v Chelsea", "Manchester City", "Chelsea")]
+    [InlineData("Real Madrid v Barcelona", "Real Sociedad", "Barcelona")]          // one team only
+    public void DifferentMatchIsRejected(string betfair, string home, string away) =>
+        Assert.Equal(0, TeamMatcher.Score(betfair, home, away));
+
+    [Fact]
+    public void SnapshotThenGoalUpdatesScore()
+    {
+        var f = new LiveScoreFeed();
+        LiveAlert? got = null; f.Alert += a => got = a;
+        f.Handle("{\"type\":\"snapshot\",\"matches\":[{\"sofa_event_id\":0,\"home_team\":\"Buriram United\",\"away_team\":\"Beijing Guoan\",\"home_score\":0,\"away_score\":0}]}");
+        Assert.Equal("0-0", f.Find("Buriram Utd v Beijing Guoan")!.ScoreText);
+        f.Handle("{\"type\":\"goal\",\"sofa_event_id\":4866014,\"home_team\":\"Buriram United\",\"away_team\":\"Beijing Guoan\",\"home_score\":1,\"away_score\":0,\"scoring_team\":\"home\"}");
+        Assert.Equal("1-0", f.Find("Buriram Utd v Beijing Guoan")!.ScoreText);
+        Assert.Equal("goal", got!.Kind); Assert.EndsWith("(Buriram United)", got.Text);
+        Assert.Single(f.Matches);
+    }
+
+    [Fact]
+    public void ScoreChangeFiresOncePerChangeAndNeverOnFirstSight()
+    {
+        var f = new LiveScoreFeed(); var seen = new List<string>();
+        f.ScoreChanged += (m, ph, pa) => seen.Add($"{ph}-{pa}->{m.ScoreText}");
+        string snap(int h, int a) => "{\"type\":\"snapshot\",\"matches\":[{\"home_team\":\"Viking FK\",\"away_team\":\"Bayern Munich\",\"home_score\":" + h + ",\"away_score\":" + a + "}]}";
+        f.Handle(snap(0, 0));
+        Assert.Empty(seen);                                                   // first sight
+        f.Handle("{\"type\":\"goal\",\"home_team\":\"Viking FK\",\"away_team\":\"Bayern Munich\",\"home_score\":0,\"away_score\":1,\"scoring_team\":\"away\"}");
+        f.Handle(snap(0, 1));                                                 // snapshot repeating the same score: no second event
+        Assert.Equal(new[] { "0-0->0-1" }, seen);
+        f.Handle(snap(0, 0));                                                 // goal disallowed by VAR
+        Assert.Equal(new[] { "0-0->0-1", "0-1->0-0" }, seen);
+        f.Handle(snap(0, 0)); Assert.Equal(2, seen.Count);
+    }
+
+    [Fact] public void BadMessagesAreIgnored()
+    {
+        var f = new LiveScoreFeed(); f.Handle("not json"); f.Handle("{}"); f.Handle("{\"type\":\"snapshot\"}");
+        Assert.Empty(f.Matches); Assert.Null(f.Find("A v B"));
     }
 }

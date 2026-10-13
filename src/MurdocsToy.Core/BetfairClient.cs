@@ -21,6 +21,7 @@ public sealed class BetfairClient : IDisposable
     readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(30) };
     readonly string _appKey;
     string? _session;
+    string? _user, _pass;   // kept in memory only, to renew an expired session
 
     public BetfairClient(string appKey) => _appKey = appKey;
 
@@ -40,6 +41,7 @@ public sealed class BetfairClient : IDisposable
         if (body["status"]?.GetValue<string>() != "SUCCESS")
             throw new BetfairException(body["error"]?.GetValue<string>() ?? "LOGIN_FAILED", "Betfair login failed: " + body["error"]);
         _session = body["token"]!.GetValue<string>();
+        _user = username; _pass = password;
     }
 
     public async Task KeepAliveAsync(CancellationToken ct = default)
@@ -51,7 +53,21 @@ public sealed class BetfairClient : IDisposable
         await _http.SendAsync(req, ct);
     }
 
+    static readonly HashSet<string> SessionErrors = new() { "INVALID_SESSION_INFORMATION", "NO_SESSION", "NO_APP_KEY_SESSION" };
+
+    /// <summary>Calls the API; if Betfair says the session expired, logs in again once and retries.</summary>
     async Task<T> CallAsync<T>(string url, string method, object args, CancellationToken ct)
+    {
+        try { return await CallOnce<T>(url, method, args, ct); }
+        catch (BetfairException ex) when (SessionErrors.Contains(ex.Code) && _user != null && _pass != null)
+        {
+            _session = null;
+            await LoginAsync(_user, _pass, ct);
+            return await CallOnce<T>(url, method, args, ct);
+        }
+    }
+
+    async Task<T> CallOnce<T>(string url, string method, object args, CancellationToken ct)
     {
         if (_session == null) throw new InvalidOperationException("Not logged in.");
         var payload = JsonSerializer.Serialize(new { jsonrpc = "2.0", method, @params = args, id = 1 }, Json);
@@ -91,8 +107,9 @@ public sealed class BetfairClient : IDisposable
             ["eventIds"] = eventId == null ? null : new[] { eventId },
             ["textQuery"] = text,
         };
-        // upcoming window: started up to 3h ago (in-play) through the next 2 days
-        f["marketStartTime"] = new { from = DateTime.UtcNow.AddHours(-3).ToString("o"), to = DateTime.UtcNow.AddDays(2).ToString("o") };
+        // In-play games can have started long ago (tennis, cricket, golf), so in-play searches have no start-time limit.
+        // Otherwise: games that started up to 3h ago through the next 2 days.
+        if (!inPlayOnly) f["marketStartTime"] = new { from = DateTime.UtcNow.AddHours(-3).ToString("o"), to = DateTime.UtcNow.AddDays(2).ToString("o") };
         return f;
     }
 
@@ -111,6 +128,40 @@ public sealed class BetfairClient : IDisposable
         return r.Select(x => new EventNode(x["event"]!["id"]!.ToString(), x["event"]!["name"]!.ToString(), x["event"]!["countryCode"]?.ToString(),
                 x["event"]!["openDate"]?.GetValue<DateTime>(), x["marketCount"]?.GetValue<int>() ?? 0))
             .OrderBy(e => e.OpenDate).ThenBy(e => e.Name).ToList();
+    }
+
+    /// <summary>
+    /// Matched volume per match: the largest market of each event (normally Match Odds). Events are queried in batches,
+    /// so a whole tree level costs a few calls. Events without markets are left out.
+    /// </summary>
+    public async Task<Dictionary<string, double>> GetEventVolumesAsync(IEnumerable<string> eventIds, CancellationToken ct = default)
+    {
+        var result = new Dictionary<string, double>();
+        foreach (var chunk in eventIds.Distinct().Chunk(20))
+        {
+            var r = await Betting<List<MarketCatalogEntry>>("listMarketCatalogue", new
+            {
+                filter = new { eventIds = chunk },
+                marketProjection = new[] { "EVENT" },
+                sort = "MAXIMUM_TRADED",
+                maxResults = 1000,
+            }, ct);
+            foreach (var m in r)
+                if (m.Event != null && (m.TotalMatched ?? 0) > result.GetValueOrDefault(m.Event.Id))
+                    result[m.Event.Id] = m.TotalMatched!.Value;
+        }
+        return result;
+    }
+
+    public async Task<MarketCatalogEntry?> GetMarketAsync(string marketId, CancellationToken ct = default)
+    {
+        var r = await Betting<List<MarketCatalogEntry>>("listMarketCatalogue", new
+        {
+            filter = new { marketIds = new[] { marketId } },
+            marketProjection = new[] { "EVENT", "MARKET_START_TIME", "RUNNER_DESCRIPTION" },
+            maxResults = 1,
+        }, ct);
+        return r.FirstOrDefault();
     }
 
     /// <summary>All markets of one match/event; "Match Odds" first, then by traded volume.</summary>

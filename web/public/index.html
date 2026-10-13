@@ -20,6 +20,11 @@
   .node:hover, .node.sel { background:var(--panel); } .node.sel { color:var(--accent); }
   .node .tw { display:inline-block; width:16px; text-align:center; color:var(--mute); }
   .node small { color:var(--mute); margin-left:6px; }
+  .node .star { cursor:pointer; margin-right:4px; color:var(--accent); } .node .star:hover { filter:brightness(1.4); }
+  .node .score { margin-left:8px; padding:0 6px; border-radius:4px; background:#1d3b57; color:#fff; font-weight:700; font-size:12px; }
+  .node.live { font-weight:600; }
+  #scoreBar { text-align:center; font:700 18px system-ui; padding:8px; background:#12151a; border-bottom:1px solid var(--line); }
+  #scoreBar.flash { background:var(--accent); color:#000; }
   .kids { margin-left:14px; border-left:1px solid var(--line); }
   table { border-collapse:collapse; width:100%; }
   th { font-weight:500; color:var(--mute); text-align:center; padding:6px; position:sticky; top:0; background:var(--bg); }
@@ -47,6 +52,7 @@
   <select id="sport"></select>
   <input id="q" placeholder="search matches" size="18">
   <label><input type="checkbox" id="inplay"> in-play</label>
+  <label title="Open a favorite match's ladder whenever its score changes (browsers may ask you to allow pop-ups)"><input type="checkbox" id="autoopen"> auto-open favorites on score change</label>
   <button id="find">Find</button>
   <span class="grow"></span>
   <span id="delayed" class="warn"></span>
@@ -57,6 +63,8 @@
   <h2 style="margin:0">Betfair login</h2>
   <input id="u" placeholder="username" autocomplete="username">
   <input id="p" type="password" placeholder="password" autocomplete="current-password">
+  <input id="k" placeholder="app key" autocomplete="off">
+  <label class="mute"><input type="checkbox" id="rem" checked> remember username and app key</label>
   <button id="go">Log in</button>
   <div id="loginerr" class="warn"></div>
 </div>
@@ -64,6 +72,8 @@
 <main id="app" class="hidden">
   <section id="markets"></section>
   <section>
+    <div id="scoreBar" class="hidden"></div>
+    <div id="liq" style="border-bottom:1px solid var(--line)"></div>
     <table><thead><tr><th style="text-align:left">Runner</th><th>Back 3</th><th>Back 2</th><th>Back</th><th>Lay</th><th>Lay 2</th><th>Lay 3</th><th>Last</th><th>Matched</th></tr></thead><tbody id="runners"></tbody></table>
     <h3 style="padding:0 10px">Current orders <span class="mute">(click to cancel)</span></h3>
     <table><tbody id="orders"></tbody></table>
@@ -81,16 +91,19 @@
 <div id="toast"></div>
 
 <script type="module">
-import { window as ticks } from './ladder.js';
+import { window as ticks, LiquidityTracker, short } from './ladder.js';
+import { drawLiquidity } from './liquidity.js';
+import { findLive, matchScore } from './teams.js';
 const $ = id => document.getElementById(id);
 const api = async (path, body) => {
-  const r = await fetch('/api/' + path, body ? { method: 'POST', body: JSON.stringify(body) } : {});
+  const r = await fetch('/api/' + path, body ? { method: 'POST', headers: { 'X-MT': '1' }, body: JSON.stringify(body) } : {});
   const j = await r.json();
   if (!r.ok) throw new Error(j.message || j.error);
   return j;
 };
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const fmt = v => (v == null ? '' : +v.toFixed(2)).toString();
+const opt = { stakes: [2, 5, 10, 25, 50], stake: 2 };
 let state = { types: [], markets: [], market: null, book: null, sel: null, busy: false };
 
 function toast(msg, ms = 3500) { const t = $('toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', ms); }
@@ -101,20 +114,46 @@ async function boot() {
     if (s.hasEnvCreds) { try { await api('login', {}); } catch (e) { /* fall through to form */ } }
     if (!(await api('status')).loggedIn) { $('login').classList.remove('hidden'); return; }
   }
+  if (s.mirror) await startMirror();
   start();
 }
+try { const sv = JSON.parse(localStorage.getItem('mt.login') || '{}'); $('u').value = sv.u ?? ''; $('k').value = sv.k ?? ''; } catch { /* ignore */ }
 $('go').onclick = async () => {
-  try { await api('login', { username: $('u').value, password: $('p').value }); $('login').classList.add('hidden'); start(); }
+  try {
+    await api('login', { username: $('u').value, password: $('p').value, appKey: $('k').value.trim() || undefined });
+    try { if ($('rem').checked) localStorage.setItem('mt.login', JSON.stringify({ u: $('u').value, k: $('k').value.trim() })); else localStorage.removeItem('mt.login'); } catch { /* ignore */ }
+    $('login').classList.add('hidden'); start();
+  }
   catch (e) { $('loginerr').textContent = e.message; }
 };
+
+let mirror = false, mirrorVersion = -1;
+async function startMirror() {
+  mirror = true;
+  try { const o = await api('options'); opt.stakes = o.stakes; opt.stake = o.stake; } catch { /* keep defaults */ }
+  const bar = el('span', 'mute'); bar.id = 'mirrorBar'; $('delayed').before(bar);
+  bar.textContent = 'Mirroring desktop';
+  setInterval(async () => {
+    try {
+      const m = await api('mirror');
+      if (m.version === mirrorVersion) return; mirrorVersion = m.version;
+      bar.replaceChildren(document.createTextNode('Mirroring desktop  '));
+      for (const l of m.ladders) { const b = el('button', '', 'Ladder: ' + l.name); b.onclick = () => popup(l.marketId); b.style.marginLeft = '4px'; bar.append(b); }
+      if (m.selectedMarketId && m.selectedMarketId !== state.market?.marketId) {
+        const mk = await api('market?marketId=' + encodeURIComponent(m.selectedMarketId));
+        if (mk) pickMarket(mk);
+      }
+    } catch { /* desktop closed: keep the last view */ }
+  }, 1500);
+}
 
 async function start() {
   $('app').classList.remove('hidden');
   state.types = await api('eventtypes');
   for (const t of state.types) $('sport').append(new Option(t.name, t.id));
   $('sport').value = state.types.find(t => t.name === 'Soccer')?.id ?? state.types[0].id;
-  [2, 5, 10, 25, 50].forEach(v => { const b = el('button', '', v); b.onclick = () => { $('stake').value = v; markStake(); }; $('stakes').append(b); });
-  markStake(); $('stake').oninput = markStake;
+  opt.stakes.forEach(v => { const b = el('button', '', v); b.onclick = () => { $('stake').value = v; markStake(); }; $('stakes').append(b); });
+  $('stake').value = opt.stake; markStake(); $('stake').oninput = markStake;
   await find(); funds(); setInterval(poll, 2000); setInterval(funds, 30000);
 }
 function markStake() { [...$('stakes').children].forEach(b => b.classList.toggle('on', b.textContent === $('stake').value)); }
@@ -135,7 +174,7 @@ function treeNode(label, sub, loader, onPick, onOpen) {
   async function toggle() {
     if (!loader) return;
     const open = kids.classList.contains('hidden');
-    if (open && !loaded) { loaded = true; kids.textContent = 'Loading…'; try { kids.replaceChildren(...(await loader())); } catch (e) { loaded = false; kids.textContent = e.message; } }
+    if (open && !loaded) { loaded = true; kids.textContent = 'Loading…'; try { kids.replaceChildren(...(await loader())); dispatchEvent(new Event('mt-tree')); } catch (e) { loaded = false; kids.textContent = e.message; } }
     kids.classList.toggle('hidden', !open); tw.textContent = open ? '▾' : '▸';
   }
   row.onclick = () => { document.querySelectorAll('.node.sel').forEach(n => n.classList.remove('sel')); row.classList.add('sel'); onPick?.(); toggle(); };
@@ -145,16 +184,58 @@ function treeNode(label, sub, loader, onPick, onOpen) {
   return wrap;
 }
 const popup = id => window.open('ladder.html?marketId=' + encodeURIComponent(id), 'ladder-' + id, 'popup,width=1100,height=760');
-function pickMarket(m) { state.market = m; state.book = null; state.sel = null; poll(); }
-function marketNode(m) { return treeNode(m.marketName, '', null, () => pickMarket(m), () => popup(m.marketId)); }
+let tracker = new LiquidityTracker();
+function pickMarket(m) { state.market = m; state.book = null; state.sel = null; tracker = new LiquidityTracker(); drawLiquidity($('liq'), tracker); poll(); }
+function marketNode(m) { return treeNode(m.marketName, m.totalMatched > 0 ? short(m.totalMatched) : '', null, () => pickMarket(m), () => popup(m.marketId)); }
+const favs = new Map();   // eventId -> name
+const volumes = {};       // eventId -> matched volume of the match
+const opened = new Map(); // marketId -> popup window we opened
+
+/** "[time] Home 0 - 1 Away (145643€)": live score between the teams, match volume after. */
+function eventLabel(e, m) {
+  const parts = e.name.split(/\s+v\s+/i);
+  const game = m && parts.length === 2 ? `${parts[0]} ${m.homeScore} - ${m.awayScore} ${parts[1]}` : m ? `${e.name} [${m.homeScore}-${m.awayScore}]` : e.name;
+  const when = !m && e.openDate ? new Date(e.openDate).toLocaleString([], { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + '  ' : '';
+  const vol = volumes[e.id] > 0 ? ` (${Math.floor(volumes[e.id])}€)` : '';
+  return when + game + vol;
+}
+
 function eventNode(e) {
-  let first = null;
-  const n = treeNode(e.name, new Date(e.openDate).toLocaleString([], { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }), async () => {
+  const n = treeNode('', '', async () => {
     const ms = await api('eventmarkets?' + qs({ eventId: e.id }));
-    return ms.map(m => { const c = marketNode(m); first ??= { m, c }; return c; });
+    return ms.map(marketNode);
   }, null, async () => { const ms = await api('eventmarkets?' + qs({ eventId: e.id })); if (ms[0]) popup(ms[0].marketId); });
+  const tw = n.row.firstChild, star = el('span', 'star'), lbl = el('span', 'lbl');
+  star.title = 'Favorite'; star.onclick = ev => { ev.stopPropagation(); toggleFav(e); };
+  n.row.replaceChildren(tw, star, lbl);
+  n.row.dataset.eid = e.id; n.row.dataset.ev = e.name; n.row._e = e;
+  lbl.textContent = eventLabel(e, null); star.textContent = favs.has(e.id) ? '★' : '☆';
   return n;
 }
+
+async function loadFavs() {
+  try { favs.clear(); for (const f of await api('favorites')) favs.set(f.eventId, f.name); } catch { /* keep what we have */ }
+  renderFavs(); paintScores(); pollVolumes();
+}
+/** The ★ Favorites section at the top of the tree. */
+function renderFavs() {
+  const box = $('markets'); box.querySelector(':scope > [data-fav]')?.remove();
+  const node = treeNode(`★ Favorites (${favs.size})`, favs.size ? '' : 'press ☆ next to a match', async () =>
+    [...favs].map(([id, name]) => eventNode({ id, name, openDate: null })));
+  node.dataset.fav = '1'; box.prepend(node);
+  if (favs.size) node.open();
+}
+async function toggleFav(e) {
+  try { await api('favorites', { eventId: e.id, name: e.name, favorite: !favs.has(e.id) }); await loadFavs(); }
+  catch (err) { toast(err.message); }
+}
+async function pollVolumes() {
+  const ids = [...new Set([...document.querySelectorAll('.node[data-eid]')].map(r => r.dataset.eid))];
+  if (!ids.length) return;
+  try { Object.assign(volumes, await api('volumes?ids=' + ids.join(','))); paintScores(); } catch { /* decoration only */ }
+}
+addEventListener('mt-tree', () => { paintScores(); pollVolumes(); });
+setInterval(pollVolumes, 20000);
 
 async function find() {
   const box = $('markets'); box.textContent = 'Loading…';
@@ -165,12 +246,14 @@ async function find() {
       : (await api('competitions?' + qs({ eventTypeId: sportId(), inPlay: inPlay() }))).map(c =>
           treeNode(c.name, `(${c.marketCount})`, async () => (await api('events?' + qs({ eventTypeId: sportId(), competitionId: c.id, inPlay: inPlay() }))).map(eventNode)));
     box.replaceChildren(...(nodes.length ? nodes : [el('div', 'node', 'Nothing found')]));
+    renderFavs();
     if (!state.market) autoSelect(box);
+    pollVolumes();
   } catch (e) { box.textContent = e.message; toast(e.message); }
 }
 /** Open the first match's Match Odds so the screen is never empty. */
 async function autoSelect(box) {
-  let node = box.children[0];
+  let node = [...box.children].find(c => !c.dataset.fav);
   if (!node?.open) return;
   if (!$('q').value.trim()) { await node.open(); node = node.kids.children[0]; }   // competition -> its first match
   if (!node?.open) return;
@@ -181,6 +264,58 @@ async function autoSelect(box) {
 $('find').onclick = find; $('q').onkeydown = e => e.key === 'Enter' && find();
 $('inplay').onchange = find; $('sport').onchange = find;
 
+let live = { connected: false, matches: [], alerts: [] }, seenAlert = '', flashUntil = 0;
+function paintScores() {
+  for (const row of document.querySelectorAll('.node[data-eid]')) {
+    const e = row._e, m = findLive(e.name, live.matches);
+    row.classList.toggle('live', !!m);
+    row.querySelector('.lbl').textContent = eventLabel(e, m);
+    row.querySelector('.star').textContent = favs.has(e.id) ? '★' : '☆';
+  }
+  const bar = $('scoreBar'), m = state.market?.event ? findLive(state.market.event.name, live.matches) : null;
+  bar.classList.toggle('hidden', !m);
+  if (m) { bar.textContent = `${m.home}  ${m.homeScore} - ${m.awayScore}  ${m.away}`; bar.classList.toggle('flash', Date.now() < flashUntil); }
+}
+const lastScore = new Map();   // "home|away" -> "h-a"
+$('autoopen').checked = (() => { try { return localStorage.getItem('mt.autoopen') === '1'; } catch { return false; } })();
+$('autoopen').onchange = () => { try { localStorage.setItem('mt.autoopen', $('autoopen').checked ? '1' : '0'); } catch { /* ignore */ } };
+
+async function openFavoriteLadder(eventId) {
+  const ms = await api('eventmarkets?' + qs({ eventId }));
+  const mk = ms[0]; if (!mk) return;
+  const w = opened.get(mk.marketId);
+  if (w && !w.closed) { w.focus(); return; }                     // already open: just raise it
+  const win = popup(mk.marketId);
+  if (win) opened.set(mk.marketId, win);
+  else { pickMarket(mk); toast('Pop-up blocked: showing the ladder here. Allow pop-ups for this site to open windows automatically.', 8000); }
+}
+
+function checkScoreChanges() {
+  for (const m of live.matches) {
+    const key = m.home + '|' + m.away, cur = `${m.homeScore}-${m.awayScore}`, prev = lastScore.get(key);
+    lastScore.set(key, cur);
+    if (prev === undefined || prev === cur) continue;
+    for (const [id, name] of favs) {
+      if (matchScore(name, m.home, m.away) <= 0) continue;
+      flashUntil = Date.now() + 20000;
+      toast(`${name}: ${prev} -> ${cur}`, 8000);
+      if ($('autoopen').checked) openFavoriteLadder(id).catch(e => toast(e.message));
+    }
+  }
+}
+
+async function pollLive() {
+  try {
+    live = await api('live');
+    checkScoreChanges();
+    const last = live.alerts.at(-1);
+    if (last && last.time !== seenAlert) { if (seenAlert) { toast(last.text, 8000); flashUntil = Date.now() + 20000; } seenAlert = last.time; }
+    paintScores();
+  } catch { /* relay not configured */ }
+}
+setInterval(pollLive, 3000); setTimeout(pollLive, 1500);
+loadFavs();
+
 async function poll() {
   if (state.busy) return; state.busy = true;
   try {
@@ -188,7 +323,8 @@ async function poll() {
       state.book = await api('book?marketId=' + encodeURIComponent(state.market.marketId));
       $('delayed').textContent = state.book?.isMarketDataDelayed ? 'DELAYED DATA' : '';
       if (state.sel == null) state.sel = state.book?.runners?.[0]?.selectionId ?? null;
-      drawRunners(); drawLadder();
+      if (state.book) { tracker.add(state.book); drawLiquidity($('liq'), tracker); }
+      drawRunners(); drawLadder(); paintScores();
     }
     drawOrders(await api('orders').catch(() => []));
   } catch (e) { toast(e.message); } finally { state.busy = false; }

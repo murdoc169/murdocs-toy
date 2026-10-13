@@ -41,3 +41,39 @@ export function greenUp(pos, price) {
   const size = r2(Math.abs(h));
   return size < 0.01 ? null : { side: h > 0 ? 'BACK' : 'LAY', size };
 }
+
+/** Compact volume: 950, 12.5k, 1.2m. */
+export const short = v => (v >= 1e6 ? +(v / 1e6).toFixed(1) + 'm' : v >= 1e3 ? +(v / 1e3).toFixed(1) + 'k' : String(Math.round(v)));
+
+/** Sum of 1/price over best prices, as a percentage; 0 when the book is incomplete. */
+export function bookPct(book, back) {
+  let sum = 0;
+  for (const r of (book.runners ?? []).filter(r => r.status === 'ACTIVE')) {
+    const best = (back ? r.ex?.availableToBack : r.ex?.availableToLay)?.[0];
+    if (!best || !(best.price > 0)) return 0;
+    sum += 1 / best.price;
+  }
+  return Math.round(sum * 1000) / 10;
+}
+
+/** Rolling liquidity history for one market: matched volume, money on the book, matched per minute. */
+export class LiquidityTracker {
+  constructor(max = 900, windowMs = 60000) { this.max = max; this.windowMs = windowMs; this.samples = []; this.last = null; }
+  add(book, now = Date.now()) {
+    let back = 0, lay = 0;
+    for (const r of (book.runners ?? []).filter(r => r.status === 'ACTIVE')) {
+      back += (r.ex?.availableToBack ?? []).reduce((s, p) => s + p.size, 0);
+      lay += (r.ex?.availableToLay ?? []).reduce((s, p) => s + p.size, 0);
+    }
+    back = r2(back); lay = r2(lay);
+    this.samples.push({ t: now, matched: book.totalMatched ?? 0, back, lay });
+    if (this.samples.length > this.max) this.samples.shift();
+    return this.last = { matched: book.totalMatched ?? 0, back, lay, backPct: bookPct(book, true), layPct: bookPct(book, false), perMin: this.rate(now) };
+  }
+  rate(now = Date.now()) {
+    if (this.samples.length < 2) return 0;
+    const last = this.samples.at(-1), start = this.samples.find(s => s.t >= now - this.windowMs) ?? this.samples[0];
+    const mins = (last.t - start.t) / 60000;
+    return mins <= 0 ? 0 : r2(Math.max(0, last.matched - start.matched) / mins);
+  }
+}

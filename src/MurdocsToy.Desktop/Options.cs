@@ -2,6 +2,9 @@ using System.Text.Json;
 
 namespace MurdocsToy.Desktop;
 
+/// <summary>A match the user starred.</summary>
+public record FavoriteEvent(string EventId, string Name);
+
 /// <summary>User-editable settings, persisted to %APPDATA%\MurdocsToy\options.json.</summary>
 public sealed class Options
 {
@@ -13,6 +16,10 @@ public sealed class Options
     public string Persistence { get; set; } = "LAPSE";   // LAPSE | PERSIST | MARKET_ON_CLOSE
     public bool AlwaysOnTop { get; set; } = false;
     public bool AutoCentre { get; set; } = true;
+    public List<FavoriteEvent> Favorites { get; set; } = new();
+    public bool AutoOpenOnScore { get; set; } = false;   // open (or raise) a favorite match's ladder whenever its score changes
+    public string RelayUrl { get; set; } = "";   // live-score relay, e.g. ws://relay-host:9001 (empty = off)
+    public bool MirrorToWeb { get; set; } = true;   // serve the web UI from this app (http://localhost:8080)
     public float FontSize { get; set; } = 9f;
     public string BackColour { get; set; } = "#A0D2FA";
     public string LayColour { get; set; } = "#FABECD";

@@ -6,11 +6,15 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>MurdocsToy</AssemblyName>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <Product>Murdoc's Toy</Product>
     <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="..\..\web\public\*.*" LogicalName="web/%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
     <ProjectReference Include="..\MurdocsToy.Core\MurdocsToy.Core.csproj" />
   </ItemGroup>
 </Project>

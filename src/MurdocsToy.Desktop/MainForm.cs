@@ -10,22 +10,39 @@ sealed class MainForm : Form
     readonly bool _openLadder;
     readonly Button _openBtn = new() { Text = "Open ladder", AutoSize = true };
     readonly Button _optBtn = new() { Text = "Options", AutoSize = true };
+    readonly Button _webBtn = new() { Text = "Web", AutoSize = true, Visible = false };
+    WebMirror? _web;
+    readonly LiveScoreFeed _scores = new();
+    readonly Label _live = new() { AutoSize = true, Padding = new Padding(8, 5, 0, 0), ForeColor = Color.Gray, Text = "" };
+    readonly Label _scoreLbl = new() { Dock = DockStyle.Top, Height = 0, TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Segoe UI", 12f, FontStyle.Bold), BackColor = Color.FromArgb(18, 21, 26), ForeColor = Color.White };
+    readonly System.Windows.Forms.Timer _scoreTimer = new() { Interval = 2000 };
+    DateTime _flashUntil;
     readonly bool _privacy; // --privacy hides balance and orders (for screenshots and screen sharing)
 
     readonly ComboBox _sports = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 140 };
     readonly TextBox _search = new() { Width = 160, PlaceholderText = "search matches" };
     readonly CheckBox _inPlay = new() { Text = "In-play", AutoSize = true };
+    readonly Button _favBtn = new() { Text = "\u2605 Favorite", AutoSize = true };
+    readonly CheckBox _autoOpen = new() { Text = "Auto-open favorites on score change", AutoSize = true, Padding = new Padding(0, 4, 0, 0) };
+    readonly Dictionary<string, LadderForm> _ladderWindows = new();
+    readonly Dictionary<string, MarketCatalogEntry> _matchOdds = new();
+    string _favSig = "";
+    readonly Dictionary<string, double> _volumes = new();
+    readonly System.Windows.Forms.Timer _volTimer = new() { Interval = 20000 };
+    bool _volBusy;
     readonly Button _find = new() { Text = "Find", AutoSize = true };
     readonly NumericUpDown _stake = new() { DecimalPlaces = 2, Minimum = 1, Maximum = 10000, Value = 2, Width = 70 };
     readonly Label _funds = new() { AutoSize = true, Padding = new Padding(8, 5, 0, 0) };
     readonly Label _banner = new() { AutoSize = true, Padding = new Padding(8, 5, 0, 0), ForeColor = Color.DarkOrange };
     readonly TreeView _tree = new() { Dock = DockStyle.Fill, ShowLines = true, ShowRootLines = true, HideSelection = false, FullRowSelect = true, ItemHeight = 20 };
     readonly Dictionary<TreeNode, Task> _loads = new();
+    readonly LiquidityPanel _liq = new() { Dock = DockStyle.Bottom };
     readonly DataGridView _runners = Grid();
     readonly DataGridView _ladder = Grid();
     readonly DataGridView _orders = Grid();
     readonly Label _status = new() { Dock = DockStyle.Bottom, Height = 22, Padding = new Padding(4, 3, 0, 0) };
     readonly System.Windows.Forms.Timer _timer = new() { Interval = 2000 };
+    readonly System.Windows.Forms.Timer _keepAlive = new() { Interval = 15 * 60 * 1000 };
 
     List<EventType> _types = new();
     List<MarketCatalogEntry> _catalog = new();
@@ -53,17 +70,19 @@ sealed class MainForm : Form
         MinimumSize = new Size(900, 600);
         StartPosition = FormStartPosition.CenterScreen;
 
-        var top = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 34, Padding = new Padding(4, 3, 4, 0) };
+        var top = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(4, 3, 4, 3) };
         top.Controls.AddRange(new Control[]
         {
-            new Label { Text = "Sport", AutoSize = true, Padding = new Padding(0, 5, 0, 0) }, _sports, _search, _inPlay, _find,
-            _openBtn, _optBtn,
+            new Label { Text = "Sport", AutoSize = true, Padding = new Padding(0, 5, 0, 0) }, _sports, _search, _inPlay, _find, _favBtn, _autoOpen,
+            _openBtn, _optBtn, _webBtn, _live,
             new Label { Text = "Stake", AutoSize = true, Padding = new Padding(16, 5, 0, 0) }, _stake, _funds, _banner,
         });
 
         var right = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 200 };
         var centre = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Vertical, SplitterDistance = 700 };
         centre.Panel1.Controls.Add(_runners);
+        centre.Panel1.Controls.Add(_liq);
+        centre.Panel1.Controls.Add(_scoreLbl);
         centre.Panel2.Controls.Add(_ladder);
         var lower = new GroupBox { Text = "Current orders (double-click to cancel)", Dock = DockStyle.Fill };
         lower.Controls.Add(_orders);
@@ -84,17 +103,41 @@ sealed class MainForm : Form
         _orders.Columns.AddRange(Col("Market", 2), Col("Runner", 2), Col("Side"), Col("Price"), Col("Size"), Col("Matched"), Col("Remaining"), Col("Status"), Col("Bet id", 2));
 
         _openBtn.Click += async (_, _) => await OpenLadder();
-        _optBtn.Click += (_, _) => { using var f = new OptionsForm(_opt); if (f.ShowDialog(this) == DialogResult.OK) _opt.Save(); };
+        _webBtn.Click += (_, _) => { if (_web != null) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(_web.Url) { UseShellExecute = true }); };
+        FormClosed += (_, _) => _web?.Dispose();
+        _optBtn.Click += (_, _) => { using var f = new OptionsForm(_opt); if (f.ShowDialog(this) == DialogResult.OK) { _opt.Save(); StartScores(); } };
         _tree.BeforeExpand += (_, e) => { _ = ExpandLoad(e.Node!); };
         _tree.AfterSelect += async (_, e) => await OnPick(e.Node!);
         _tree.NodeMouseDoubleClick += async (_, e) => { _tree.SelectedNode = e.Node; await OpenLadder(); };
         _sports.SelectedIndexChanged += async (_, _) => { if (_sports.Focused) await LoadTree(); };
         _inPlay.CheckedChanged += async (_, _) => await LoadTree();
         _find.Click += async (_, _) => await LoadTree();
+        _autoOpen.Checked = _opt.AutoOpenOnScore;
+        _autoOpen.CheckedChanged += (_, _) => { _opt.AutoOpenOnScore = _autoOpen.Checked; _opt.Save(); Say(_autoOpen.Checked ? "Favorites: ladder opens when a score changes" : "Favorites: auto-open off"); };
+        _favBtn.Click += (_, _) => { if (SelectedEvent() is { } ev) ToggleFavorite(ev); else Say("Select a match first"); };
+        _tree.NodeMouseClick += (_, e) =>
+        {
+            if (e.Button != MouseButtons.Right) return;
+            _tree.SelectedNode = e.Node;
+            if (SelectedEvent() is not { } ev) return;
+            var menu = new ContextMenuStrip();
+            menu.Items.Add(IsFavorite(ev.Id) ? "Remove from favorites" : "Add to favorites", null, (_, _) => ToggleFavorite(ev));
+            menu.Items.Add("Open ladder", null, async (_, _) => await OpenLadder());
+            menu.Show(_tree, e.Location);
+        };
+        _scores.ScoreChanged += (m, ph, pa) => { if (!IsDisposed && IsHandleCreated) BeginInvoke(() => OnScoreChanged(m, ph, pa)); };
         _search.KeyDown += async (_, e) => { if (e.KeyCode == Keys.Enter) await LoadTree(); };
         _runners.SelectionChanged += (_, _) => PickRunner();
         _ladder.CellClick += async (_, e) => await LadderClick(e);
         _orders.CellDoubleClick += async (_, e) => await CancelOrder(e.RowIndex);
+        _keepAlive.Tick += async (_, _) => { try { await _bf.KeepAliveAsync(); } catch { /* the next call re-logs in if needed */ } };
+        _keepAlive.Start();
+        _scoreTimer.Tick += (_, _) => RefreshScores();
+        _volTimer.Tick += async (_, _) => await RefreshVolumes();
+        _volTimer.Start();
+        _scoreTimer.Start();
+        _scores.Alert += a => { if (!IsDisposed && IsHandleCreated) BeginInvoke(() => { _flashUntil = DateTime.UtcNow.AddSeconds(20); Say(a.Text); RefreshScores(); }); };
+        FormClosed += (_, _) => _scores.Dispose();
         _timer.Tick += async (_, _) => await Poll();
         Shown += async (_, _) => await Startup();
         // Splitter positions only make sense once the window has its real size.
@@ -121,6 +164,8 @@ sealed class MainForm : Form
             _types = await _bf.ListEventTypesAsync();
             _sports.Items.AddRange(_types.Select(t => t.Name).Cast<object>().ToArray());
             _sports.SelectedIndex = Math.Max(0, _types.FindIndex(t => t.Name == "Soccer"));
+            StartScores();
+            StartMirror();
             await LoadTree();
             await AutoSelect();
             await RefreshFunds();
@@ -160,13 +205,119 @@ sealed class MainForm : Form
             else
                 foreach (var c in await _bf.ListCompetitionsAsync(SportId, _inPlay.Checked))
                     _tree.Nodes.Add(WithPlaceholder(new TreeNode($"{c.Name} ({c.MarketCount})") { Tag = c }));
-            Say(_tree.Nodes.Count == 0 ? "Nothing found" : $"{_tree.Nodes.Count} {(text != null ? "matches" : "competitions")}");
+            SyncFavorites();
+            _ = RefreshVolumes();
+            Say(_tree.Nodes.Count <= 1 ? "Nothing found" : $"{_tree.Nodes.Count} {(text != null ? "matches" : "competitions")}");
         }
         catch (Exception ex) { Say(ex.Message); }
     }
 
-    static TreeNode EventTreeNode(EventNode e) =>
-        WithPlaceholder(new TreeNode($"{e.OpenDate?.ToLocalTime():dd/MM HH:mm}  {e.Name}") { Tag = e });
+    TreeNode EventTreeNode(EventNode e)
+    {
+        var n = WithPlaceholder(new TreeNode { Tag = e });
+        n.Text = EventLabel(e, null);
+        return n;
+    }
+
+    /// <summary>"[star] [dd/MM HH:mm] Porto 0 - 1 Benfica (145643€)": live score between the teams, match volume after.</summary>
+    string EventLabel(EventNode e, LiveMatch? live)
+    {
+        var parts = e.Name.Split(" v ", 2, StringSplitOptions.TrimEntries);
+        string game = live != null && parts.Length == 2 ? $"{parts[0]} {live.HomeScore} - {live.AwayScore} {parts[1]}"
+                    : live != null ? $"{e.Name} [{live.ScoreText}]" : e.Name;
+        string when = live == null && e.OpenDate != null ? e.OpenDate.Value.ToLocalTime().ToString("dd/MM HH:mm  ") : "";
+        string vol = _volumes.TryGetValue(e.Id, out var v) && v > 0 ? $" ({(long)v}€)" : "";
+        return (IsFavorite(e.Id) ? "★ " : "") + when + game + vol;
+    }
+
+    /// <summary>Matched volume of every match currently in the tree, fetched in a few batched calls.</summary>
+    async Task RefreshVolumes()
+    {
+        if (_volBusy) return;
+        _volBusy = true;
+        try
+        {
+            var ids = EventNodes(_tree.Nodes).Select(n => ((EventNode)n.Tag!).Id).Distinct().ToList();
+            if (ids.Count == 0) return;
+            foreach (var kv in await _bf.GetEventVolumesAsync(ids)) _volumes[kv.Key] = kv.Value;
+            RefreshScores();
+        }
+        catch (Exception) { /* volumes are decoration: try again next tick */ }
+        finally { _volBusy = false; }
+    }
+
+    // ---- favorites -------------------------------------------------------------------------------------------
+    bool IsFavorite(string eventId) => _opt.Favorites.Any(f => f.EventId == eventId);
+
+    EventNode? SelectedEvent() => _tree.SelectedNode switch
+    {
+        { Tag: EventNode e } => e,
+        { Tag: MarketCatalogEntry, Parent.Tag: EventNode e } => e,
+        _ => null,
+    };
+
+    void ToggleFavorite(EventNode ev)
+    {
+        var list = _opt.Favorites.ToList();            // replaced as a whole: the web mirror may read it from another thread
+        if (list.RemoveAll(f => f.EventId == ev.Id) == 0) list.Add(new FavoriteEvent(ev.Id, ev.Name));
+        _opt.Favorites = list; _opt.Save();
+        Say(IsFavorite(ev.Id) ? $"Added to favorites: {ev.Name}" : $"Removed from favorites: {ev.Name}");
+        SyncFavorites();
+    }
+
+    /// <summary>Stars on matches and the Favorites section follow the saved list (also when the web UI changed it).</summary>
+    void SyncFavorites()
+    {
+        _favSig = string.Join(",", _opt.Favorites.Select(f => f.EventId));
+        var old = _tree.Nodes.Cast<TreeNode>().FirstOrDefault(x => x.Tag is string t && t == "favorites");
+        bool wasOpen = old?.IsExpanded ?? true;
+        old?.Remove();
+        var root = new TreeNode($"\u2605 Favorites ({_opt.Favorites.Count})") { Tag = "favorites", NodeFont = new Font(_tree.Font, FontStyle.Bold) };
+        foreach (var f in _opt.Favorites) root.Nodes.Add(EventTreeNode(new EventNode(f.EventId, f.Name, null, null, 0)));
+        if (_opt.Favorites.Count == 0) root.Nodes.Add(new TreeNode("(right-click a match, or select it and press \u2605 Favorite)") { ForeColor = Color.Gray, Tag = "hint" });
+        _tree.Nodes.Insert(0, root);
+        if (wasOpen) root.Expand();
+        RefreshScores();
+    }
+
+    /// <summary>A score changed on the relay: if it is a favorite and auto-open is on, show that match's ladder.</summary>
+    void OnScoreChanged(LiveMatch m, int prevHome, int prevAway)
+    {
+        if (!_opt.AutoOpenOnScore) return;
+        var fav = _opt.Favorites.FirstOrDefault(f => TeamMatcher.Score(f.Name, m.Home, m.Away) > 0);
+        if (fav != null) _ = OpenFavoriteLadder(fav, m, prevHome, prevAway);
+    }
+
+    async Task OpenFavoriteLadder(FavoriteEvent fav, LiveMatch m, int prevHome, int prevAway)
+    {
+        try
+        {
+            if (!_matchOdds.TryGetValue(fav.EventId, out var market))
+            {
+                market = (await _bf.ListEventMarketsAsync(fav.EventId)).FirstOrDefault();
+                if (market == null) return;
+                _matchOdds[fav.EventId] = market;
+            }
+            ShowLadder(market);
+            Say($"Score change {m.Home} {prevHome}-{prevAway} -> {m.ScoreText} {m.Away}: ladder opened");
+        }
+        catch (Exception ex) { Say(ex.Message); }
+    }
+
+    /// <summary>Opens the ladder window for a market, or raises it if it is already open.</summary>
+    void ShowLadder(MarketCatalogEntry market)
+    {
+        if (_ladderWindows.TryGetValue(market.MarketId, out var open) && !open.IsDisposed)
+        {
+            if (open.WindowState == FormWindowState.Minimized) open.WindowState = FormWindowState.Normal;
+            open.Activate(); open.BringToFront();
+            return;
+        }
+        var f = new LadderForm(_bf, market, _opt, _privacy, _scores);
+        _ladderWindows[market.MarketId] = f;
+        f.FormClosed += (_, _) => _ladderWindows.Remove(market.MarketId);
+        f.Show(this);
+    }
 
     /// <summary>Loads a node's children once (events of a competition, markets of a match).</summary>
     Task ExpandLoad(TreeNode n)
@@ -187,10 +338,11 @@ sealed class MainForm : Form
                 foreach (var m in await _bf.ListEventMarketsAsync(e.Id))
                 {
                     if (!_catalog.Any(x => x.MarketId == m.MarketId)) _catalog.Add(m);
-                    kids.Add(new TreeNode(m.MarketName) { Tag = m });
+                    kids.Add(new TreeNode(m.TotalMatched > 0 ? $"{m.MarketName}   [{Liquidity.Short(m.TotalMatched.Value)}]" : m.MarketName) { Tag = m });
                 }
             n.Nodes.Clear();
             foreach (var k in kids) n.Nodes.Add(k);
+            if (n.Tag is CompetitionNode) _ = RefreshVolumes();
         }
         catch (Exception ex) { Say(ex.Message); n.Nodes.Clear(); WithPlaceholder(n); _loads.Remove(n); }
     }
@@ -198,7 +350,7 @@ sealed class MainForm : Form
     /// <summary>Opens the busiest competition's first match and selects its Match Odds market.</summary>
     async Task AutoSelect()
     {
-        var node = _tree.Nodes.Cast<TreeNode>().OrderByDescending(x => (x.Tag as CompetitionNode)?.MarketCount ?? 0).FirstOrDefault();
+        var node = _tree.Nodes.Cast<TreeNode>().Where(x => x.Tag is CompetitionNode or EventNode).OrderByDescending(x => (x.Tag as CompetitionNode)?.MarketCount ?? 0).FirstOrDefault();
         if (node == null) return;
         if (node.Tag is CompetitionNode) { node.Expand(); await ExpandLoad(node); node = node.Nodes.Cast<TreeNode>().FirstOrDefault(x => x.Tag is EventNode); }
         if (node?.Tag is not EventNode) return;
@@ -221,13 +373,72 @@ sealed class MainForm : Form
     {
         var m = await ResolveMarket(_tree.SelectedNode);
         if (m == null) { Say("Select a match or market first"); return; }
-        new LadderForm(_bf, m, _opt, _privacy).Show(this);
+        ShowLadder(m);
     }
+
+    void StartMirror()
+    {
+        if (!_opt.MirrorToWeb) return;
+        _web = new WebMirror(_bf, _opt, _privacy, _scores);
+        if (_web.Start()) { _webBtn.Visible = true; _webBtn.Text = "Web " + _web.Url.Replace("http://", "").TrimEnd('/'); }
+        else { _web.Dispose(); _web = null; Say("Could not start the web mirror (ports 8080-8089 busy)"); }
+    }
+
+    /// <summary>Connects to the live-score relay named in Options (MT_RELAY_URL overrides it); empty means off.</summary>
+    void StartScores()
+    {
+        var url = Environment.GetEnvironmentVariable("MT_RELAY_URL");
+        if (string.IsNullOrWhiteSpace(url)) url = _opt.RelayUrl;
+        _scores.Stop();
+        if (string.IsNullOrWhiteSpace(url)) { _live.Text = ""; return; }
+        _scores.Start(url.Trim());
+        _live.Text = "Live scores: connecting...";
+    }
+
+    IEnumerable<TreeNode> EventNodes(TreeNodeCollection nodes)
+    {
+        foreach (TreeNode n in nodes)
+        {
+            if (n.Tag is EventNode) yield return n;
+            else if (n.Tag is CompetitionNode || n.Tag is string t && t == "favorites") foreach (var c in EventNodes(n.Nodes)) yield return c;
+        }
+    }
+
+    /// <summary>Score badges on matches in the tree, the banner over the selected market, and the connection indicator.</summary>
+    void RefreshScores()
+    {
+        if (string.Join(",", _opt.Favorites.Select(f => f.EventId)) != _favSig) SyncFavorites();
+        if (_scores.Url != null)
+        {
+        _live.Text = _scores.Connected ? $"Live scores: {_scores.Matches.Count} matches" : "Live scores: offline (retrying)";
+        _live.ForeColor = _scores.Connected ? Color.SeaGreen : Color.Firebrick;
+        }
+        _tree.BeginUpdate();
+        foreach (var n in EventNodes(_tree.Nodes))
+        {
+            var e = (EventNode)n.Tag!;
+            var m = _scores.Url == null ? null : _scores.Find(e.Name);
+            var text = EventLabel(e, m);
+            if (n.Text != text) n.Text = text;
+            n.NodeFont = m != null ? (_boldFont ??= new Font(_tree.Font, FontStyle.Bold)) : null;
+        }
+        _tree.EndUpdate();
+        var sel = _market?.Event?.Name == null || _scores.Url == null ? null : _scores.Find(_market.Event.Name);
+        if (sel == null) { _scoreLbl.Height = 0; return; }
+        bool flash = DateTime.UtcNow < _flashUntil;
+        _scoreLbl.Height = 30;
+        _scoreLbl.Text = $"{sel.Home}  {sel.HomeScore} - {sel.AwayScore}  {sel.Away}";
+        _scoreLbl.BackColor = flash ? Color.Gold : Color.FromArgb(18, 21, 26);
+        _scoreLbl.ForeColor = flash ? Color.Black : Color.White;
+    }
+
+    Font? _boldFont;
 
     async Task OnPick(TreeNode n)
     {
         if (n.Tag is not MarketCatalogEntry m) return;
-        _market = m; _book = null; _selected = null;
+        MirrorState.Select(m.MarketId);
+        _market = m; _book = null; _selected = null; _liq.Reset(); RefreshScores();
         await Poll();
     }
 
@@ -240,6 +451,7 @@ sealed class MainForm : Form
             if (_market != null)
             {
                 _book = (await _bf.ListMarketBookAsync(new[] { _market.MarketId })).FirstOrDefault();
+                if (_book != null) _liq.Update(_book);
                 DrawRunners();
                 DrawLadder();
                 _banner.Text = _book?.IsMarketDataDelayed == true ? "DELAYED DATA (delayed app key)" : "";

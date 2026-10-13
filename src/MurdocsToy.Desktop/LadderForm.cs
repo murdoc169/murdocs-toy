@@ -9,11 +9,15 @@ sealed class LadderForm : Form
     readonly MarketCatalogEntry _market;
     readonly Options _opt;
     readonly bool _privacy;
+    readonly LiveScoreFeed? _feed;
+    readonly Label _score = new() { Dock = DockStyle.Top, Height = 0, TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Segoe UI", 13f, FontStyle.Bold), BackColor = Color.FromArgb(18, 21, 26), ForeColor = Color.White };
+    DateTime _flashUntil;
 
     readonly FlowLayoutPanel _top = new() { Dock = DockStyle.Top, Height = 40, Padding = new Padding(4, 4, 4, 0), WrapContents = false };
     readonly TableLayoutPanel _body = new() { Dock = DockStyle.Fill, RowCount = 1 };
     readonly Label _status = new() { Dock = DockStyle.Bottom, Height = 24, Padding = new Padding(6, 4, 0, 0), BackColor = Color.FromArgb(40, 44, 52), ForeColor = Color.White };
     readonly NumericUpDown _custom = new() { DecimalPlaces = 2, Minimum = 1, Maximum = 100000, Width = 80 };
+    readonly LiquidityPanel _liq = new() { Dock = DockStyle.Bottom, Height = 96 };
     readonly System.Windows.Forms.Timer _timer = new();
     readonly List<(RunnerCatalog Info, LadderControl Ladder)> _ladders = new();
 
@@ -22,15 +26,15 @@ sealed class LadderForm : Form
     MarketBook? _book;
     List<CurrentOrder> _orders = new();
 
-    public LadderForm(BetfairClient bf, MarketCatalogEntry market, Options opt, bool privacy)
+    public LadderForm(BetfairClient bf, MarketCatalogEntry market, Options opt, bool privacy, LiveScoreFeed? feed = null)
     {
-        _bf = bf; _market = market; _opt = opt; _privacy = privacy;
+        _bf = bf; _market = market; _opt = opt; _privacy = privacy; _feed = feed;
         Text = $"{market.Event?.Name} - {market.MarketName}";
         Size = new Size(Math.Max(760, 300 * (market.Runners?.Count ?? 3) + 20), 760);
         StartPosition = FormStartPosition.CenterParent;
         KeyPreview = true;
 
-        Controls.Add(_body); Controls.Add(_top); Controls.Add(_status);
+        Controls.Add(_body); Controls.Add(_top); Controls.Add(_score); Controls.Add(_liq); Controls.Add(_status);
         _stake = opt.DefaultStake;
         BuildLadders();
         BuildTopBar();
@@ -38,7 +42,9 @@ sealed class LadderForm : Form
 
         _timer.Tick += async (_, _) => await Poll();
         Shown += async (_, _) => { await Poll(); _timer.Start(); };
-        FormClosed += (_, _) => _timer.Stop();
+        if (_feed != null) { _feed.Alert += OnAlert; _feed.ScoreChanged += OnScoreChanged; }
+        MirrorState.LadderOpened(market.MarketId, Text);
+        FormClosed += (_, _) => { if (_feed != null) { _feed.Alert -= OnAlert; _feed.ScoreChanged -= OnScoreChanged; } _timer.Stop(); MirrorState.LadderClosed(market.MarketId); };
         KeyDown += (_, e) => { if (e.KeyCode == Keys.Escape) Close(); };
     }
 
@@ -105,6 +111,8 @@ sealed class LadderForm : Form
         {
             _book = (await _bf.ListMarketBookAsync(new[] { _market.MarketId })).FirstOrDefault();
             if (!_privacy) { try { _orders = await _bf.ListCurrentOrdersAsync(_market.MarketId); } catch (BetfairException) { } }
+            if (_book != null) _liq.Update(_book);
+            ShowScore();
             foreach (var (info, ladder) in _ladders)
                 ladder.SetData(info.RunnerName, _book?.Runners?.FirstOrDefault(r => r.SelectionId == info.SelectionId),
                     _orders.Where(o => o.SelectionId == info.SelectionId).ToList());
@@ -117,6 +125,32 @@ sealed class LadderForm : Form
     }
 
     string _lastMsg = "";
+
+    /// <summary>Live score banner for this match (when the relay knows it).</summary>
+    void ShowScore()
+    {
+        var m = _feed?.Find(_market.Event?.Name ?? "");
+        if (m == null) { _score.Height = 0; return; }
+        _score.Height = 30;
+        bool flash = DateTime.UtcNow < _flashUntil;
+        _score.Text = $"{m.Home}  {m.HomeScore} - {m.AwayScore}  {m.Away}";
+        _score.BackColor = flash ? Color.Gold : Color.FromArgb(18, 21, 26);
+        _score.ForeColor = flash ? Color.Black : Color.White;
+    }
+
+    void OnScoreChanged(LiveMatch m, int prevHome, int prevAway)
+    {
+        if (IsDisposed || TeamMatcher.Score(_market.Event?.Name ?? "", m.Home, m.Away) <= 0) return;
+        BeginInvoke(() => { _flashUntil = DateTime.UtcNow.AddSeconds(20); _lastMsg = $"Score {prevHome}-{prevAway} -> {m.ScoreText}"; ShowScore(); });
+    }
+
+    void OnAlert(LiveAlert a)
+    {
+        var m = _feed?.Find(_market.Event?.Name ?? "");
+        if (m == null || a.Home != m.Home || a.Away != m.Away) return;
+        if (IsDisposed) return;
+        BeginInvoke(() => { _flashUntil = DateTime.UtcNow.AddSeconds(20); _lastMsg = a.Text; ShowScore(); });
+    }
 
     async Task Place(string side, RunnerCatalog r, double price)
     {

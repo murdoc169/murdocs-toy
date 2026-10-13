@@ -10,6 +10,8 @@ export class BetfairError extends Error {
 export class Betfair {
   #appKey; #session = null;
   constructor(appKey) { this.#appKey = appKey; }
+  get hasKey() { return !!this.#appKey; }
+  set appKey(k) { this.#appKey = k; }
   get loggedIn() { return this.#session !== null; }
 
   async login(username, password) {
@@ -57,8 +59,10 @@ export class Betfair {
   }
 
   #treeFilter({ eventTypeId, inPlay, competitionId, text }) {
-    const f = { eventTypeIds: [eventTypeId], marketStartTime: { from: new Date(Date.now() - 3 * 3600e3).toISOString(), to: new Date(Date.now() + 2 * 86400e3).toISOString() } };
+    const f = { eventTypeIds: [eventTypeId] };
+    // in-play games can have started long ago (tennis, cricket, golf): no start-time limit for them
     if (inPlay) f.inPlayOnly = true;
+    else f.marketStartTime = { from: new Date(Date.now() - 3 * 3600e3).toISOString(), to: new Date(Date.now() + 2 * 86400e3).toISOString() };
     if (competitionId) f.competitionIds = [competitionId];
     if (text) f.textQuery = text;
     return f;
@@ -82,6 +86,17 @@ export class Betfair {
       filter: { eventIds: [eventId] }, marketProjection: ['EVENT', 'MARKET_START_TIME', 'RUNNER_DESCRIPTION'], sort: 'MAXIMUM_TRADED', maxResults: 200,
     });
     return r.sort((a, b) => (a.marketName === 'Match Odds' ? 0 : 1) - (b.marketName === 'Match Odds' ? 0 : 1));
+  }
+
+  /** Matched volume per match: the largest market of each event (normally Match Odds), batched. */
+  async eventVolumes(eventIds) {
+    const out = {};
+    const ids = [...new Set(eventIds)];
+    for (let i = 0; i < ids.length; i += 20) {
+      const r = await this.#bet('listMarketCatalogue', { filter: { eventIds: ids.slice(i, i + 20) }, marketProjection: ['EVENT'], sort: 'MAXIMUM_TRADED', maxResults: 1000 });
+      for (const m of r) if (m.event && (m.totalMatched ?? 0) > (out[m.event.id] ?? 0)) out[m.event.id] = m.totalMatched;
+    }
+    return out;
   }
 
   async book(marketId) {

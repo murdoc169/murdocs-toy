@@ -7,7 +7,7 @@
 <style>
   :root { --bg:#12151a; --panel:#1b2028; --line:#2b3340; --text:#e6e9ee; --mute:#8b95a5; --back:#a0d2fa; --lay:#fabecd; --accent:#f5c542; --ok:#4cc38a; --bad:#ef5b5b; }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--text); font:13px/1.3 system-ui,Segoe UI,sans-serif; height:100vh; display:grid; grid-template-rows:auto 1fr auto; }
+  body { margin:0; background:var(--bg); color:var(--text); font:13px/1.3 system-ui,Segoe UI,sans-serif; height:100vh; display:grid; grid-template-rows:auto auto 1fr auto auto; }
   button,input,select { background:#0e1116; color:var(--text); border:1px solid var(--line); border-radius:5px; padding:5px 9px; font:inherit; cursor:pointer; }
   button:hover { border-color:var(--accent); } button.on { background:var(--accent); color:#000; border-color:var(--accent); }
   #bar { display:flex; gap:6px; align-items:center; padding:6px 8px; background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap; }
@@ -26,13 +26,17 @@
   .r .b, .r .l { cursor:pointer; } .r .b.best { background:#7fbcf0; } .r .l.best { background:#f59ab4; }
   .r .o.back { background:var(--back); font-weight:700; cursor:pointer; } .r .o.lay { background:var(--lay); font-weight:700; cursor:pointer; }
   .r .v { color:#666; font-size:11px; }
+  #scoreBar { text-align:center; font:700 18px system-ui; padding:6px; background:#12151a; }
+  #scoreBar.flash { background:var(--accent); color:#000; }
   #status { padding:4px 8px; background:#282c34; color:#fff; font-size:12px; }
   dialog { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:8px; } dialog label { display:block; margin:8px 0; }
 </style>
 </head>
 <body>
 <div id="bar"></div>
+<div id="scoreBar" class="hidden"></div>
 <div id="cols"></div>
+<div id="liq"></div>
 <div id="status">Loading…</div>
 <dialog id="opts">
   <form method="dialog">
@@ -47,12 +51,14 @@
 </dialog>
 
 <script type="module">
-import { window as ticks, up, down, position, greenUp } from './ladder.js';
+import { window as ticks, up, down, position, greenUp, LiquidityTracker } from './ladder.js';
+import { drawLiquidity } from './liquidity.js';
+import { findLive } from './teams.js';
 const $ = id => document.getElementById(id);
 const marketId = new URLSearchParams(location.search).get('marketId');
 const el = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; };
 const fmt = v => (v == null ? '' : +v.toFixed(2)).toString();
-const api = async (p, body) => { const r = await fetch('/api/' + p, body ? { method: 'POST', body: JSON.stringify(body) } : {}); const j = await r.json(); if (!r.ok) throw new Error(j.message || j.error); return j; };
+const api = async (p, body) => { const r = await fetch('/api/' + p, body ? { method: 'POST', headers: { 'X-MT': '1' }, body: JSON.stringify(body) } : {}); const j = await r.json(); if (!r.ok) throw new Error(j.message || j.error); return j; };
 
 const defaults = { stakes: [2, 5, 10, 20, 50, 100], stake: 2, rows: 25, ms: 1000, persistence: 'LAPSE', confirm: false };
 let opt = { ...defaults };
@@ -60,6 +66,7 @@ try { opt = { ...defaults, ...JSON.parse(localStorage.getItem('mt.ladder') || '{
 const saveOpt = () => { try { localStorage.setItem('mt.ladder', JSON.stringify(opt)); } catch { /* ignore */ } };
 
 let market, book, orders = [], msg = '', timer;
+const tracker = new LiquidityTracker();
 const centres = new Map(), manual = new Set();
 
 function bar() {
@@ -88,6 +95,7 @@ async function poll() {
   try {
     book = await api('book?marketId=' + encodeURIComponent(marketId));
     orders = await api('orders?marketId=' + encodeURIComponent(marketId)).catch(() => []);
+    if (book) { tracker.add(book); drawLiquidity($('liq'), tracker); }
     draw();
   } catch (e) { $('status').textContent = e.message; }
 }
@@ -146,7 +154,7 @@ function draw() {
     const back = m(r.ex?.availableToBack), lay = m(r.ex?.availableToLay), trd = m(r.ex?.tradedVolume);
     const bb = r.ex?.availableToBack?.[0]?.price, bl = r.ex?.availableToLay?.[0]?.price;
     const mine = orders.filter(o => o.selectionId === info.selectionId && o.status === 'EXECUTABLE' && o.remaining > 0);
-    const n = Math.max(9, Math.floor((innerHeight - 138) / 22));
+    const n = Math.max(9, Math.floor((innerHeight - 236) / 22));
     for (const price of ticks(centres.get(info.selectionId), Math.floor(n / 2), n - Math.floor(n / 2) - 1)) {
       const row = el('div', 'r');
       const mo = mine.filter(o => Math.abs(o.price - price) < 1e-9);
@@ -163,12 +171,35 @@ function draw() {
   $('status').textContent = `${book.status}${book.inPlay ? ' IN-PLAY' : ''}   Matched ${Math.round(book.totalMatched ?? 0).toLocaleString()}${book.isMarketDataDelayed ? '   DELAYED DATA (delayed app key)' : ''}${msg ? '   |   ' + msg : ''}`;
 }
 
+let live = { matches: [], alerts: [] }, seenAlert = '', flashUntil = 0, prevScore = null;
+function paintScore() {
+  const bar = $('scoreBar'), m = market?.event ? findLive(market.event.name, live.matches) : null;
+  bar.classList.toggle('hidden', !m);
+  if (m) { bar.textContent = `${m.home}  ${m.homeScore} - ${m.awayScore}  ${m.away}`; bar.classList.toggle('flash', Date.now() < flashUntil); }
+}
+async function pollLive() {
+  try {
+    live = await api('live');
+    const m = market?.event ? findLive(market.event.name, live.matches) : null;
+    const mine = m ? live.alerts.filter(x => x.text.includes(m.home) && x.text.includes(m.away)).at(-1) : null;   // newest alert for this match
+    if (mine && mine.time !== seenAlert) { if (seenAlert) { msg = mine.text; flashUntil = Date.now() + 20000; } seenAlert = mine.time; }
+    else if (!seenAlert && mine) seenAlert = mine.time;
+    const cur = m ? `${m.homeScore}-${m.awayScore}` : null;
+    if (cur && prevScore && cur !== prevScore) { flashUntil = Date.now() + 20000; msg = `Score ${prevScore} -> ${cur}`; }
+    if (cur) prevScore = cur;
+    paintScore();
+  } catch { /* relay not configured */ }
+}
+setInterval(pollLive, 3000); setTimeout(pollLive, 1200);
 addEventListener('resize', () => draw());
 (async () => {
   if (!marketId) { $('status').textContent = 'No marketId'; return; }
   market = await api('market?marketId=' + encodeURIComponent(marketId));
   if (!market) { $('status').textContent = 'Market not found'; return; }
   document.title = `${market.event?.name ?? ''} - ${market.marketName}`;
+  try {   // served by the desktop app: use its stake buttons and bet settings
+    if ((await api('status')).mirror) { const o = await api('options'); Object.assign(opt, { stakes: o.stakes, stake: o.stake, persistence: o.persistence, confirm: o.confirm }); }
+  } catch { /* standalone server: keep local options */ }
   bar(); await poll(); restart();
 })().catch(e => { $('status').textContent = e.message; });
 </script>

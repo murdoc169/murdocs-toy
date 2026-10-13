@@ -7,3 +7,4 @@ node_modules/
 dist/
 *.pdb
 smoke.txt
+web/favorites.json
