@@ -253,6 +253,19 @@ sealed partial class ClassicLadderForm : Form
         if (visible == 0) return;
         _grid.ColumnStyles.Clear();
         for (int i = 0; i < _ladders.Count; i++) _grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, _ladders[i].Ladder.Visible ? 100f / visible : 0));
+        FitWidth(visible);
+    }
+
+    /// <summary>Grows or shrinks the window to the number of ladders showing (270 px each for a big field, 340 for a small one).</summary>
+    void FitWidth(int visible)
+    {
+        if (WindowState != FormWindowState.Normal) return;
+        var area = Screen.FromControl(this).WorkingArea;
+        int each = _ladders.Count > 3 ? 270 : 340;
+        int width = Math.Min(area.Width - 40, Math.Max(visible, 1) * each + _tools.Width);
+        if (width < MinimumSize.Width) width = MinimumSize.Width;
+        ClientSize = new Size(width, ClientSize.Height);
+        if (Right > area.Right) Left = Math.Max(area.Left, area.Right - Width);      // keep it on screen
     }
 
     // ---- data ---------------------------------------------------------------------------------------------
