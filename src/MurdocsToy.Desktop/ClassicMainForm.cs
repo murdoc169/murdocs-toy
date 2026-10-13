@@ -7,7 +7,7 @@ namespace MurdocsToy.Desktop;
 /// The Classic main window: a narrow navigator (balance row, sport header, Today/All filters, country > competition > match > market
 /// tree with flags). Double-click a match to open its ladders.
 /// </summary>
-sealed class ClassicMainForm : Form
+sealed class ClassicMainForm : ChromeForm
 {
     enum When { Today, Tomorrow, Next2Days }
     enum Scope { All, InPlay, Favorites }

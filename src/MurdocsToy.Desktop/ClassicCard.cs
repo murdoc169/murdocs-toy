@@ -11,7 +11,7 @@ public record CardData(string Title, string DateTimeText, string ClockText, bool
                        List<CardRunner> Runners);
 
 /// <summary>The small card shown while a Classic ladder is minimized: a compact view of the market's prices.</summary>
-sealed class ClassicCard : Form
+sealed class ClassicCard : ChromeForm
 {
     readonly CardView _view = new() { Dock = DockStyle.Fill };
     readonly Action _restore, _closeLadder;

@@ -7,7 +7,7 @@ namespace MurdocsToy.Desktop;
 /// Classic trading window for one market: a ladder per runner side by side, and the slate tools panel on the right
 /// (clock and book percentages, back/lay staking, bet persistence, market information, ladder selector).
 /// </summary>
-sealed partial class ClassicLadderForm : Form
+sealed partial class ClassicLadderForm : ChromeForm
 {
     readonly AppHost _host;
     readonly MarketCatalogEntry _market;
