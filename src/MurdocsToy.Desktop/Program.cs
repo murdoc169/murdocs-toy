@@ -15,7 +15,7 @@ static class Program
         bool auto = args.Contains("--smoke") || args.Contains("--autologin");
         string ui = (args.FirstOrDefault(a => a.StartsWith("--ui="))?[5..]) switch
         {
-            "classic" => Ui.Classic, "light" => Ui.ModernLight, "dark" => Ui.ModernDark, _ => LoginStore.Load().Ui ?? Ui.ModernDark,
+            "classic" => Ui.Classic, "light" => Ui.ModernLight, "dark" => Ui.ModernDark, _ => LoginStore.Load().Ui ?? Ui.Classic,
         };
         Theme.Dark = ui == Ui.ModernDark;
         using var login = new LoginForm(auto, ui);

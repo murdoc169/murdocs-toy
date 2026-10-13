@@ -9,7 +9,7 @@ Everything uses only Betfair's public, documented [Exchange API-NG](https://betf
 
 ## Interfaces
 
-Choose one in the **Interface** box on the login form (remembered for next time; `--ui=dark|light|classic` overrides it).
+Choose one in the **Interface** box on the login form (Classic is the default; your choice is remembered; `--ui=dark|light|classic` overrides it).
 
 **Modern (dark / light)**: tree explorer on the left, selected market on the right, pop-up ladders. Dark mode includes a dark title bar and dark menus.
 
@@ -51,7 +51,7 @@ Choose one in the **Interface** box on the login form (remembered for next time;
 
 ## Install (Windows)
 
-Download `MurdocsToy-Setup-0.4.0.exe` from the [Releases](../../releases) page and run it. It needs no .NET install, adds a Start Menu entry and an optional desktop shortcut, and can be removed from *Apps & features*. Windows SmartScreen may warn because the installer is unsigned.
+Download `MurdocsToy-Setup-0.4.1.exe` from the [Releases](../../releases) page and run it. It needs no .NET install, adds a Start Menu entry and an optional desktop shortcut, and can be removed from *Apps & features*. Windows SmartScreen may warn because the installer is unsigned.
 
 On first launch enter your Betfair username, password and application key, and pick an interface.
 
@@ -60,7 +60,7 @@ To build the installer yourself:
 ```bash
 dotnet publish src/MurdocsToy.Desktop -c Release -r win-x64 --self-contained true \
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o dist/app
-ISCC.exe installer/MurdocsToy.iss      # needs Inno Setup 6 -> dist/MurdocsToy-Setup-0.4.0.exe
+ISCC.exe installer/MurdocsToy.iss      # needs Inno Setup 6 -> dist/MurdocsToy-Setup-0.4.1.exe
 ```
 
 ## Configure
