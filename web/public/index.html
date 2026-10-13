@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenLadder</title>
+<style>
+  :root { --bg:#12151a; --panel:#1b2028; --line:#2b3340; --text:#e6e9ee; --mute:#8b95a5; --back:#5aa9e6; --backbg:#1d3b57; --lay:#ee7b9b; --laybg:#5a2a3a; --accent:#f5c542; --ok:#4cc38a; --bad:#ef5b5b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.4 system-ui,Segoe UI,sans-serif; height:100vh; display:grid; grid-template-rows:auto 1fr; }
+  header { display:flex; gap:10px; align-items:center; padding:8px 12px; background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0 12px 0 0; color:var(--accent); }
+  input,select,button { background:#0e1116; color:var(--text); border:1px solid var(--line); border-radius:6px; padding:6px 8px; font:inherit; }
+  button { cursor:pointer; } button:hover { border-color:var(--accent); }
+  .grow { flex:1; } .mute { color:var(--mute); } .warn { color:#ffb454; font-weight:600; }
+  main { display:grid; grid-template-columns:320px 1fr 340px; min-height:0; }
+  section { min-height:0; overflow:auto; border-right:1px solid var(--line); }
+  #markets div { padding:8px 12px; border-bottom:1px solid var(--line); cursor:pointer; }
+  #markets div:hover, #markets div.sel { background:var(--panel); }
+  #markets small { color:var(--mute); display:block; }
+  table { border-collapse:collapse; width:100%; }
+  th { font-weight:500; color:var(--mute); text-align:center; padding:6px; position:sticky; top:0; background:var(--bg); }
+  td { text-align:center; padding:4px 6px; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; }
+  td.name { text-align:left; font-weight:600; }
+  td.b { background:var(--backbg); color:var(--back); } td.l { background:var(--laybg); color:var(--lay); }
+  td small { display:block; color:var(--mute); font-size:11px; }
+  tr.runner { cursor:pointer; } tr.runner.sel td.name { color:var(--accent); } tr.runner.out { opacity:.4; }
+  #ladder td { padding:2px 8px; font-size:13px; cursor:default; } #ladder td.price { font-weight:700; background:#0e1116; }
+  #ladder td.b, #ladder td.l { cursor:pointer; } #ladder td.b:hover { outline:1px solid var(--back); } #ladder td.l:hover { outline:1px solid var(--lay); }
+  #ladder tr.ltp td.price { background:var(--accent); color:#000; }
+  #ladder .vol { color:var(--mute); }
+  aside { padding:10px; border:0; }
+  h3 { margin:12px 0 6px; font-size:13px; color:var(--mute); text-transform:uppercase; letter-spacing:.05em; }
+  .stakes button { margin:0 4px 4px 0; } .stakes button.on { border-color:var(--accent); color:var(--accent); }
+  #toast { position:fixed; bottom:14px; left:50%; transform:translateX(-50%); background:var(--panel); border:1px solid var(--line); padding:10px 16px; border-radius:8px; display:none; }
+  #login { max-width:340px; margin:12vh auto; background:var(--panel); padding:20px; border-radius:10px; display:grid; gap:10px; }
+  .hidden { display:none !important; }
+  @media (max-width:1000px) { main { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>OpenLadder</h1>
+  <select id="sport"></select>
+  <input id="q" placeholder="search markets" size="18">
+  <label><input type="checkbox" id="inplay"> in-play</label>
+  <button id="find">Find</button>
+  <span class="grow"></span>
+  <span id="delayed" class="warn"></span>
+  <span id="funds" class="mute"></span>
+</header>
+
+<div id="login" class="hidden">
+  <h2 style="margin:0">Betfair login</h2>
+  <input id="u" placeholder="username" autocomplete="username">
+  <input id="p" type="password" placeholder="password" autocomplete="current-password">
+  <button id="go">Log in</button>
+  <div id="loginerr" class="warn"></div>
+</div>
+
+<main id="app" class="hidden">
+  <section id="markets"></section>
+  <section>
+    <table><thead><tr><th style="text-align:left">Runner</th><th>Back 3</th><th>Back 2</th><th>Back</th><th>Lay</th><th>Lay 2</th><th>Lay 3</th><th>Last</th><th>Matched</th></tr></thead><tbody id="runners"></tbody></table>
+    <h3 style="padding:0 10px">Current orders <span class="mute">(click to cancel)</span></h3>
+    <table><tbody id="orders"></tbody></table>
+  </section>
+  <section style="border:0">
+    <aside>
+      <h3>Stake</h3>
+      <div class="stakes" id="stakes"></div>
+      <input id="stake" type="number" min="1" step="1" value="2" style="width:90px">
+      <h3 id="ladderTitle">Ladder</h3>
+      <table id="ladder"><thead><tr><th>Traded</th><th>Back</th><th>Price</th><th>Lay</th></tr></thead><tbody></tbody></table>
+    </aside>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script type="module">
+import { window as ticks } from './ladder.js';
+const $ = id => document.getElementById(id);
+const api = async (path, body) => {
+  const r = await fetch('/api/' + path, body ? { method: 'POST', body: JSON.stringify(body) } : {});
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.message || j.error);
+  return j;
+};
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const fmt = v => (v == null ? '' : +v.toFixed(2)).toString();
+let state = { types: [], markets: [], market: null, book: null, sel: null, busy: false };
+
+function toast(msg, ms = 3500) { const t = $('toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', ms); }
+
+async function boot() {
+  const s = await api('status');
+  if (!s.loggedIn) {
+    if (s.hasEnvCreds) { try { await api('login', {}); } catch (e) { /* fall through to form */ } }
+    if (!(await api('status')).loggedIn) { $('login').classList.remove('hidden'); return; }
+  }
+  start();
+}
+$('go').onclick = async () => {
+  try { await api('login', { username: $('u').value, password: $('p').value }); $('login').classList.add('hidden'); start(); }
+  catch (e) { $('loginerr').textContent = e.message; }
+};
+
+async function start() {
+  $('app').classList.remove('hidden');
+  state.types = await api('eventtypes');
+  for (const t of state.types) $('sport').append(new Option(t.name, t.id));
+  $('sport').value = state.types.find(t => t.name === 'Soccer')?.id ?? state.types[0].id;
+  [2, 5, 10, 25, 50].forEach(v => { const b = el('button', '', v); b.onclick = () => { $('stake').value = v; markStake(); }; $('stakes').append(b); });
+  markStake(); $('stake').oninput = markStake;
+  await find(); funds(); setInterval(poll, 2000); setInterval(funds, 30000);
+}
+function markStake() { [...$('stakes').children].forEach(b => b.classList.toggle('on', b.textContent === $('stake').value)); }
+
+async function funds() {
+  try { const f = await api('funds'); $('funds').textContent = `Balance ${f.available.toFixed(2)} · Exposure ${f.exposure.toFixed(2)}`; } catch (e) { $('funds').textContent = ''; }
+}
+
+async function find() {
+  const p = new URLSearchParams({ eventTypeId: $('sport').value, q: $('q').value, inPlay: $('inplay').checked ? 1 : 0 });
+  try { state.markets = await api('markets?' + p); } catch (e) { return toast(e.message); }
+  const box = $('markets'); box.replaceChildren();
+  for (const m of state.markets) {
+    const d = el('div', m.marketId === state.market?.marketId ? 'sel' : '', `${m.event?.name ?? ''} – ${m.marketName}`);
+    d.append(el('small', '', new Date(m.marketStartTime).toLocaleString()));
+    d.onclick = () => { state.market = m; state.book = null; state.sel = null; [...box.children].forEach(c => c.classList.remove('sel')); d.classList.add('sel'); poll(); };
+    box.append(d);
+  }
+  if (!state.market && box.firstChild) box.firstChild.click();
+}
+$('find').onclick = find; $('q').onkeydown = e => e.key === 'Enter' && find();
+
+async function poll() {
+  if (state.busy) return; state.busy = true;
+  try {
+    if (state.market) {
+      state.book = await api('book?marketId=' + encodeURIComponent(state.market.marketId));
+      $('delayed').textContent = state.book?.isMarketDataDelayed ? 'DELAYED DATA' : '';
+      if (state.sel == null) state.sel = state.book?.runners?.[0]?.selectionId ?? null;
+      drawRunners(); drawLadder();
+    }
+    drawOrders(await api('orders').catch(() => []));
+  } catch (e) { toast(e.message); } finally { state.busy = false; }
+}
+
+const nameOf = id => state.market?.runners?.find(r => r.selectionId === id)?.runnerName ?? String(id);
+
+function cell(cls, p) {
+  const td = el('td', cls);
+  if (p) { td.append(document.createTextNode(fmt(p.price))); td.append(el('small', '', Math.round(p.size))); }
+  return td;
+}
+function drawRunners() {
+  const body = $('runners'); body.replaceChildren();
+  for (const r of state.book?.runners ?? []) {
+    const tr = el('tr', 'runner' + (r.selectionId === state.sel ? ' sel' : '') + (r.status !== 'ACTIVE' ? ' out' : ''));
+    const b = r.ex?.availableToBack ?? [], l = r.ex?.availableToLay ?? [];
+    tr.append(el('td', 'name', nameOf(r.selectionId)), cell('b', b[2]), cell('b', b[1]), cell('b', b[0]), cell('l', l[0]), cell('l', l[1]), cell('l', l[2]),
+      el('td', '', fmt(r.lastPriceTraded)), el('td', '', r.totalMatched ? Math.round(r.totalMatched) : ''));
+    tr.onclick = () => { state.sel = r.selectionId; drawRunners(); drawLadder(); };
+    body.append(tr);
+  }
+}
+
+function drawLadder() {
+  const body = $('ladder').tBodies[0]; body.replaceChildren();
+  const r = state.book?.runners?.find(x => x.selectionId === state.sel);
+  $('ladderTitle').textContent = r ? 'Ladder – ' + nameOf(r.selectionId) : 'Ladder';
+  if (!r) return;
+  const m = o => new Map((o ?? []).map(p => [p.price, p.size]));
+  const back = m(r.ex?.availableToBack), lay = m(r.ex?.availableToLay), trd = m(r.ex?.tradedVolume);
+  const centre = r.lastPriceTraded ?? r.ex?.availableToBack?.[0]?.price ?? 2;
+  for (const price of ticks(centre, 12, 12)) {
+    const tr = el('tr', price === r.lastPriceTraded ? 'ltp' : '');
+    const bs = back.get(price), ls = lay.get(price);
+    const tb = el('td', 'b', bs ? bs.toFixed(0) : ''), tl = el('td', 'l', ls ? ls.toFixed(0) : '');
+    tb.onclick = () => bet('BACK', r.selectionId, price); tl.onclick = () => bet('LAY', r.selectionId, price);
+    tr.append(el('td', 'vol', trd.get(price) ? Math.round(trd.get(price)) : ''), tb, el('td', 'price', fmt(price)), tl);
+    body.append(tr);
+  }
+}
+
+async function bet(side, selectionId, price) {
+  const size = Number($('stake').value);
+  if (!confirm(`${side} ${nameOf(selectionId)} @ ${fmt(price)} for ${size.toFixed(2)}?`)) return;
+  try {
+    const r = await api('place', { marketId: state.market.marketId, selectionId, side, price, size });
+    toast(`Order ${r.status}${r.errorCode ? ' – ' + r.errorCode : ''}`); poll(); funds();
+  } catch (e) { toast(e.message + (e.message.includes('PERMISSION') || e.message.includes('INVALID_APP_KEY') ? ' (delayed keys cannot place bets)' : ''), 6000); }
+}
+
+function drawOrders(list) {
+  const body = $('orders'); body.replaceChildren();
+  for (const o of list) {
+    const tr = el('tr', 'runner');
+    tr.append(el('td', 'name', nameOf(o.selectionId)), el('td', o.side === 'BACK' ? 'b' : 'l', o.side), el('td', '', fmt(o.price)),
+      el('td', '', `${o.matched.toFixed(2)}/${o.size.toFixed(2)}`), el('td', '', o.status));
+    if (o.status === 'EXECUTABLE') tr.onclick = async () => { try { await api('cancel', { marketId: o.marketId, betId: o.betId }); poll(); } catch (e) { toast(e.message); } };
+    body.append(tr);
+  }
+}
+boot();
+</script>
+</body>
+</html>
