@@ -22,6 +22,8 @@ loadEnvFiles();
 
 const favFile = path.join(path.dirname(fileURLToPath(import.meta.url)), 'favorites.json');
 const readFavs = () => { try { return JSON.parse(readFileSync(favFile, 'utf8')); } catch { return []; } };
+const favCompFile = path.join(path.dirname(fileURLToPath(import.meta.url)), 'favoritecompetitions.json');
+const readFavComps = () => { try { return JSON.parse(readFileSync(favCompFile, 'utf8')); } catch { return []; } };
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public');
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css' };
@@ -45,6 +47,14 @@ export function createServer(appKey = process.env.BETFAIR_APP_KEY) {
       const list = readFavs().filter(f => f.eventId !== b.eventId);
       if (b.favorite) list.push({ eventId: String(b.eventId), name: String(b.name) });
       writeFileSync(favFile, JSON.stringify(list, null, 2));
+      return { ok: true };
+    },
+    'GET /api/favoritecompetitions': () => readFavComps(),
+    'POST /api/favoritecompetitions': (b) => {
+      if (!b.competitionId || !b.name || !b.sportId) throw new BetfairError('INVALID_INPUT');
+      const list = readFavComps().filter(f => f.competitionId !== String(b.competitionId));
+      if (b.favorite) list.push({ competitionId: String(b.competitionId), name: String(b.name), sportId: String(b.sportId), region: b.region ?? null });
+      writeFileSync(favCompFile, JSON.stringify(list, null, 2));
       return { ok: true };
     },
     'GET /api/live': () => live.snapshot(),

@@ -8,3 +8,4 @@ dist/
 *.pdb
 smoke.txt
 web/favorites.json
+web/favoritecompetitions.json

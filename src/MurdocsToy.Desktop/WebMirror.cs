@@ -134,6 +134,7 @@ sealed class WebMirror : IDisposable
     record PlaceBody(string MarketId, long SelectionId, string Side, double Price, double Size, string? Persistence);
     record CancelBody(string MarketId, string BetId);
     record FavBody(string EventId, string Name, bool Favorite);
+    record FavCompBody(string CompetitionId, string Name, string SportId, string? Region, bool Favorite);
 
     async Task<object?> Api(HttpListenerRequest r, string path)
     {
@@ -145,6 +146,7 @@ sealed class WebMirror : IDisposable
             case "GET /api/status": return new { loggedIn = true, hasKey = true, hasEnvCreds = true, mirror = true };
             case "GET /api/mirror": return MirrorState.Snapshot();
             case "GET /api/volumes": return await _bf.GetEventVolumesAsync((Q("ids") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries));
+            case "GET /api/favoritecompetitions": return _opt.FavoriteCompetitions.Select(c => new { competitionId = c.CompetitionId, c.Name, c.SportId, c.Region });
             case "GET /api/favorites": return _opt.Favorites.Select(f => new { eventId = f.EventId, f.Name });
             case "GET /api/live":
                 return new
@@ -186,6 +188,17 @@ sealed class WebMirror : IDisposable
                     list.RemoveAll(f => f.EventId == fb.EventId);
                     if (fb.Favorite) list.Add(new FavoriteEvent(fb.EventId, fb.Name));
                     _opt.Favorites = list; _opt.Save();
+                }
+                return new { ok = true };
+            case "POST /api/favoritecompetitions":
+                var fc = await Body<FavCompBody>(r);
+                if (string.IsNullOrWhiteSpace(fc.CompetitionId) || string.IsNullOrWhiteSpace(fc.Name) || string.IsNullOrWhiteSpace(fc.SportId)) throw new BetfairException("INVALID_INPUT", "invalid favorite");
+                lock (_opt)
+                {
+                    var list = _opt.FavoriteCompetitions.ToList();
+                    list.RemoveAll(f => f.CompetitionId == fc.CompetitionId);
+                    if (fc.Favorite) list.Add(new FavoriteCompetition(fc.CompetitionId, fc.Name, fc.SportId, fc.Region));
+                    _opt.FavoriteCompetitions = list; _opt.Save();
                 }
                 return new { ok = true };
             case "POST /api/cancel":

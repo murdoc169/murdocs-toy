@@ -185,6 +185,8 @@ const popup = id => window.open('ladder.html?marketId=' + encodeURIComponent(id)
 function pickMarket(m) { state.market = m; state.book = null; state.sel = null; poll(); }
 function marketNode(m) { return treeNode(m.marketName, m.totalMatched > 0 ? short(m.totalMatched) : '', null, () => pickMarket(m), () => popup(m.marketId)); }
 const favs = new Map();   // eventId -> name
+const favComps = new Map();   // competitionId -> { name, sportId, region }
+let favCompEvents = [];   // matches of the favorite competitions, so a goal in any of them can open a ladder
 const volumes = {};       // eventId -> matched volume of the match
 const opened = new Map(); // marketId -> popup window we opened
 
@@ -196,6 +198,29 @@ function eventLabel(e, m) {
   const vol = volumes[e.id] > 0 ? ` (${spaced(volumes[e.id])} €)` : '';
   return when + game + vol;
 }
+
+/** A competition row: flag, star, name; expands to its matches. */
+function compNode(c, sport) {
+  const flag = flagCode(c.region, null, c.name);
+  const n = treeNode(c.name, c.marketCount ? `(${c.marketCount})` : '', async () =>
+    (await api('events?' + qs({ eventTypeId: sport, competitionId: c.id, inPlay: inPlay() }))).map(e => eventNode(e, flag)), null, null, flag);
+  const star = el('span', 'star'); star.title = 'Favorite competition';
+  star.textContent = favComps.has(c.id) ? '★' : '☆';
+  star.onclick = ev => { ev.stopPropagation(); toggleFavComp(c, sport); };
+  n.row.insertBefore(star, n.row.children[1]);
+  n.row.dataset.cid = c.id;
+  return n;
+}
+async function toggleFavComp(c, sport) {
+  try { await api('favoritecompetitions', { competitionId: c.id, name: c.name, sportId: sport, region: c.region ?? null, favorite: !favComps.has(c.id) }); await loadFavs(); }
+  catch (err) { toast(err.message); }
+}
+async function loadFavCompEvents() {
+  const all = [];
+  for (const [id, c] of favComps) { try { all.push(...await api('events?' + qs({ eventTypeId: c.sportId, competitionId: id, inPlay: 0 }))); } catch { /* next time */ } }
+  favCompEvents = all;
+}
+setInterval(loadFavCompEvents, 3 * 60 * 1000);
 
 function eventNode(e, inheritedFlag = null) {
   const code = flagCode(null, e.countryCode, '') ?? inheritedFlag;
@@ -213,15 +238,19 @@ function eventNode(e, inheritedFlag = null) {
 
 async function loadFavs() {
   try { favs.clear(); for (const f of await api('favorites')) favs.set(f.eventId, f.name); } catch { /* keep what we have */ }
-  renderFavs(); paintScores(); pollVolumes();
+  try { favComps.clear(); for (const c of await api('favoritecompetitions')) favComps.set(c.competitionId, { name: c.name, sportId: c.sportId, region: c.region }); } catch { /* older server */ }
+  renderFavs(); paintScores(); pollVolumes(); loadFavCompEvents();
 }
 /** The ★ Favorites section at the top of the tree. */
 function renderFavs() {
   const box = $('markets'); box.querySelector(':scope > [data-fav]')?.remove();
-  const node = treeNode(`★ Favorites (${favs.size})`, favs.size ? '' : 'press ☆ next to a match', async () =>
-    [...favs].map(([id, name]) => eventNode({ id, name, openDate: null })));
+  const count = favs.size + favComps.size;
+  const node = treeNode(`★ Favorites (${count})`, count ? '' : 'press ☆ next to a match or competition', async () => [
+    ...[...favComps].map(([id, c]) => compNode({ id, name: c.name, region: c.region, marketCount: 0 }, c.sportId)),
+    ...[...favs].map(([id, name]) => eventNode({ id, name, openDate: null })),
+  ]);
   node.dataset.fav = '1'; box.prepend(node);
-  if (favs.size) node.open();
+  if (count) node.open();
 }
 async function toggleFav(e) {
   try { await api('favorites', { eventId: e.id, name: e.name, favorite: !favs.has(e.id) }); await loadFavs(); }
@@ -242,7 +271,7 @@ async function find() {
     const nodes = text
       ? (await api('events?' + qs({ eventTypeId: sportId(), q: text, inPlay: inPlay() }))).map(eventNode)
       : (await api('competitions?' + qs({ eventTypeId: sportId(), inPlay: inPlay() }))).map(c =>
-          treeNode(c.name, `(${c.marketCount})`, async () => (await api('events?' + qs({ eventTypeId: sportId(), competitionId: c.id, inPlay: inPlay() }))).map(e => eventNode(e, flagCode(c.region, null, c.name))), null, null, flagCode(c.region, null, c.name)));
+          compNode(c, sportId()));
     box.replaceChildren(...(nodes.length ? nodes : [el('div', 'node', 'Nothing found')]));
     renderFavs();
     if (!state.market) autoSelect(box);
@@ -293,8 +322,11 @@ function checkScoreChanges() {
     const key = m.home + '|' + m.away, cur = `${m.homeScore}-${m.awayScore}`, prev = lastScore.get(key);
     lastScore.set(key, cur);
     if (prev === undefined || prev === cur) continue;
-    for (const [id, name] of favs) {
-      if (matchScore(name, m.home, m.away) <= 0) continue;
+    const watched = [...favs].map(([id, name]) => [id, name]).concat(favCompEvents.map(e => [e.id, e.name]));
+    const seen = new Set();
+    for (const [id, name] of watched) {
+      if (seen.has(id) || matchScore(name, m.home, m.away) <= 0) continue;
+      seen.add(id);
       flashUntil = Date.now() + 20000;
       toast(`${name}: ${prev} -> ${cur}`, 8000);
       if ($('autoopen').checked) openFavoriteLadder(id).catch(e => toast(e.message));

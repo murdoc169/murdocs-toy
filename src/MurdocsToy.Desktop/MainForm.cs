@@ -107,11 +107,25 @@ sealed class MainForm : Form
         _find.Click += async (_, _) => await LoadTree();
         _autoOpen.Checked = _opt.AutoOpenOnScore;
         _autoOpen.CheckedChanged += (_, _) => { _opt.AutoOpenOnScore = _autoOpen.Checked; _opt.Save(); Say(_autoOpen.Checked ? "Favorites: ladder opens when a score changes" : "Favorites: auto-open off"); };
-        _favBtn.Click += (_, _) => { if (SelectedEvent() is { } ev) _host.ToggleFavorite(ev); else Say("Select a match first"); };
+        _favBtn.Click += (_, _) =>
+        {
+            if (_tree.SelectedNode is { Tag: CompetitionNode comp } cn) _host.ToggleFavoriteCompetition(comp, string.IsNullOrEmpty(cn.Name) ? SportId : cn.Name);
+            else if (SelectedEvent() is { } ev) _host.ToggleFavorite(ev);
+            else Say("Select a match or competition first");
+        };
         _tree.NodeMouseClick += (_, e) =>
         {
             if (e.Button != MouseButtons.Right) return;
             _tree.SelectedNode = e.Node;
+            if (e.Node.Tag is CompetitionNode comp)
+            {
+                var cmenu = new ContextMenuStrip();
+                var sport = string.IsNullOrEmpty(e.Node.Name) ? SportId : e.Node.Name;
+                cmenu.Items.Add(_host.IsFavoriteCompetition(comp.Id) ? "Remove competition from favorites" : "Add competition to favorites", null, (_, _) => _host.ToggleFavoriteCompetition(comp, sport));
+                Theme.Menu(cmenu);
+                cmenu.Show(_tree, e.Location);
+                return;
+            }
             if (SelectedEvent() is not { } ev) return;
             var menu = new ContextMenuStrip();
             menu.Items.Add(_host.IsFavorite(ev.Id) ? "Remove from favorites" : "Add to favorites", null, (_, _) => _host.ToggleFavorite(ev));
@@ -156,6 +170,7 @@ sealed class MainForm : Form
             _sports.SelectedIndex = Math.Max(0, _host.Types.FindIndex(t => t.Name == "Soccer"));
             _host.StartScores();
             _host.StartMirror();
+            _host.StartFavoriteCompetitions();
             if (_host.Web != null) { _webBtn.Visible = true; _webBtn.Text = "Web " + _host.Web.Url.Replace("http://", "").TrimEnd('/'); Theme.Apply(this); }
             await LoadTree();
             await AutoSelect();
@@ -202,12 +217,20 @@ sealed class MainForm : Form
                 foreach (var e in await _bf.ListEventsAsync(SportId, null, text, _inPlay.Checked)) _tree.Nodes.Add(EventTreeNode(e, null));
             else
                 foreach (var c in await _bf.ListCompetitionsAsync(SportId, _inPlay.Checked))
-                    _tree.Nodes.Add(WithPlaceholder(Node($"{c.Name} ({c.MarketCount})", c, Flags.CodeFor(c.Region, null, c.Name))));
+                    _tree.Nodes.Add(WithPlaceholder(CompetitionNode_(c, SportId, $"{c.Name} ({c.MarketCount})")));
             SyncFavorites();
             _ = RefreshVolumes();
             Say(_tree.Nodes.Count <= 1 ? "Nothing found" : $"{_tree.Nodes.Count} {(text != null ? "matches" : "competitions")}");
         }
         catch (Exception ex) { Say(ex.Message); }
+    }
+
+    /// <summary>A competition node; Name remembers its sport so favorites load correctly after the sport is switched.</summary>
+    TreeNode CompetitionNode_(CompetitionNode c, string sportId, string text)
+    {
+        var n = Node(text, c, Flags.CodeFor(c.Region, null, c.Name));
+        n.Name = sportId;
+        return n;
     }
 
     TreeNode EventTreeNode(EventNode e, string? inheritedFlag)
@@ -237,10 +260,12 @@ sealed class MainForm : Form
         var old = _tree.Nodes.Cast<TreeNode>().FirstOrDefault(x => x.Tag is string t && t == "favorites");
         bool wasOpen = old?.IsExpanded ?? true;
         old?.Remove();
-        var root = Node($"★ Favorites ({_opt.Favorites.Count})", "favorites");
+        var root = Node($"★ Favorites ({_opt.Favorites.Count + _opt.FavoriteCompetitions.Count})", "favorites");
         root.NodeFont = new Font(_tree.Font, FontStyle.Bold);
+foreach (var fc in _opt.FavoriteCompetitions)
+            root.Nodes.Add(WithPlaceholder(CompetitionNode_(new CompetitionNode(fc.CompetitionId, fc.Name, fc.Region, 0), fc.SportId, "★ " + fc.Name)));
         foreach (var f in _opt.Favorites) root.Nodes.Add(EventTreeNode(new EventNode(f.EventId, f.Name, null, null, 0), null));
-        if (_opt.Favorites.Count == 0) root.Nodes.Add(Node("(right-click a match, or select it and press ★ Favorite)", "hint"));
+        if (_opt.Favorites.Count == 0 && _opt.FavoriteCompetitions.Count == 0) root.Nodes.Add(Node("(right-click a match or competition, or select it and press ★ Favorite)", "hint"));
         _tree.Nodes.Insert(0, root);
         if (wasOpen) root.Expand();
         RefreshScores();
@@ -262,7 +287,8 @@ sealed class MainForm : Form
             if (n.Tag is CompetitionNode c)
             {
                 var flag = Flags.CodeFor(c.Region, null, c.Name);
-                kids.AddRange((await _bf.ListEventsAsync(SportId, c.Id, null, _inPlay.Checked)).Select(e => EventTreeNode(e, flag)));
+                var sport = string.IsNullOrEmpty(n.Name) ? SportId : n.Name;
+                kids.AddRange((await _bf.ListEventsAsync(sport, c.Id, null, _inPlay.Checked)).Select(e => EventTreeNode(e, flag)));
             }
             else if (n.Tag is EventNode e)
                 foreach (var m in await _bf.ListEventMarketsAsync(e.Id))

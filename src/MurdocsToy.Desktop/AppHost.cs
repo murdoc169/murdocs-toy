@@ -71,7 +71,37 @@ sealed class AppHost : IDisposable
 
     // ---- favorites ----------------------------------------------------------------------------------------
     public bool IsFavorite(string eventId) => Opt.Favorites.Any(f => f.EventId == eventId);
-    public string FavoritesSignature => string.Join(",", Opt.Favorites.Select(f => f.EventId));
+    public string FavoritesSignature => string.Join(",", Opt.Favorites.Select(f => f.EventId)) + "|" + string.Join(",", Opt.FavoriteCompetitions.Select(f => f.CompetitionId));
+
+    public bool IsFavoriteCompetition(string competitionId) => Opt.FavoriteCompetitions.Any(f => f.CompetitionId == competitionId);
+
+    public void ToggleFavoriteCompetition(CompetitionNode c, string sportId)
+    {
+        var list = Opt.FavoriteCompetitions.ToList();
+        if (list.RemoveAll(f => f.CompetitionId == c.Id) == 0) list.Add(new FavoriteCompetition(c.Id, c.Name, sportId, c.Region));
+        Opt.FavoriteCompetitions = list; Opt.Save();
+        Say(IsFavoriteCompetition(c.Id) ? $"Added competition to favorites: {c.Name}" : $"Removed competition from favorites: {c.Name}");
+        _ = RefreshCompetitionEvents();
+        FavoritesChanged?.Invoke();
+    }
+
+    // matches of the favorite competitions, so a goal in any of them can open a ladder
+    List<EventNode> _compEvents = new();
+    readonly System.Windows.Forms.Timer _compTimer = new() { Interval = 3 * 60 * 1000 };
+
+    public async Task RefreshCompetitionEvents()
+    {
+        try
+        {
+            var all = new List<EventNode>();
+            foreach (var c in Opt.FavoriteCompetitions.ToList())
+                all.AddRange(await Bf.ListEventsAsync(c.SportId, c.CompetitionId));
+            _compEvents = all;
+        }
+        catch (Exception) { /* try again on the next tick */ }
+    }
+
+    public void StartFavoriteCompetitions() { _ = RefreshCompetitionEvents(); _compTimer.Tick += async (_, _) => await RefreshCompetitionEvents(); _compTimer.Start(); }
 
     public void ToggleFavorite(EventNode ev)
     {
@@ -140,7 +170,9 @@ sealed class AppHost : IDisposable
     {
         if (!Opt.AutoOpenOnScore) return;
         var fav = Opt.Favorites.FirstOrDefault(f => TeamMatcher.Score(f.Name, m.Home, m.Away) > 0);
-        if (fav != null) _ = OpenFavoriteLadder(fav, m, prevHome, prevAway);
+        if (fav != null) { _ = OpenFavoriteLadder(fav, m, prevHome, prevAway); return; }
+        var ev = _compEvents.FirstOrDefault(e => TeamMatcher.Score(e.Name, m.Home, m.Away) > 0);
+        if (ev != null) _ = OpenFavoriteLadder(new FavoriteEvent(ev.Id, ev.Name), m, prevHome, prevAway);
     }
 
     async Task OpenFavoriteLadder(FavoriteEvent fav, LiveMatch m, int prevHome, int prevAway)
@@ -166,5 +198,5 @@ sealed class AppHost : IDisposable
         Environment.Exit(code);
     }
 
-    public void Dispose() { Web?.Dispose(); Scores.Dispose(); }
+    public void Dispose() { _compTimer.Stop(); Web?.Dispose(); Scores.Dispose(); }
 }

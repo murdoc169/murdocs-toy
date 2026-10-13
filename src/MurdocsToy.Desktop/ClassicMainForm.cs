@@ -97,7 +97,7 @@ sealed class ClassicMainForm : Form
         {
             _host.Types = await _bf.ListEventTypesAsync();
             SportIndex = Math.Max(0, _host.Types.FindIndex(t => t.Name == "Soccer"));
-            _host.StartScores(); _host.StartMirror();
+            _host.StartScores(); _host.StartMirror(); _host.StartFavoriteCompetitions();
             _scoreTimer.Start(); _volTimer.Start(); _keepAlive.Start();
             _ = LoadAccount();
             await LoadTree();
@@ -216,6 +216,14 @@ sealed class ClassicMainForm : Form
 
     void NodeMenu(TreeNode n, Point at)
     {
+        if (n.Tag is CompetitionNode comp)
+        {
+            var cm = new ContextMenuStrip();
+            var sport = string.IsNullOrEmpty(n.Name) ? SportId : n.Name;
+            cm.Items.Add(_host.IsFavoriteCompetition(comp.Id) ? "Remove competition from favorites" : "Add competition to favorites", null, (_, _) => _host.ToggleFavoriteCompetition(comp, sport));
+            cm.Show(_tree, at);
+            return;
+        }
         if (SelectedEvent() is not { } ev) return;
         var menu = new ContextMenuStrip();
         menu.Items.Add(_host.IsFavorite(ev.Id) ? "Remove from favorites" : "Add to favorites", null, (_, _) => _host.ToggleFavorite(ev));
@@ -310,7 +318,7 @@ sealed class ClassicMainForm : Form
                     var flag = Country(grp.First()).Flag;
                     var country = Node(grp.Key, "country", flag, "none");
                     foreach (var c in grp.OrderBy(c => c.Name))
-                        country.Nodes.Add(WithPlaceholder(Node(c.Name, c, null, "ball", bold: true)));
+                        country.Nodes.Add(WithPlaceholder(CompetitionTreeNode(c, SportId)));
                     _tree.Nodes.Add(country);
                 }
             }
@@ -320,6 +328,13 @@ sealed class ClassicMainForm : Form
             RefreshLabels();
         }
         catch (Exception ex) { _status.Text = ex.Message; }
+    }
+
+    TreeNode CompetitionTreeNode(CompetitionNode c, string sportId, bool star = false)
+    {
+        var n = Node((star ? "★ " : "") + c.Name, c, null, "ball", bold: true);
+        n.Name = sportId;                                  // the sport this competition belongs to
+        return n;
     }
 
     TreeNode EventTreeNode(EventNode e, string? flag) =>
@@ -340,7 +355,8 @@ sealed class ClassicMainForm : Form
             if (n.Tag is CompetitionNode c)
             {
                 var (from, to) = Window();
-                kids.AddRange((await _bf.ListEventsAsync(SportId, c.Id, null, _scope == Scope.InPlay, from, to)).Select(e => EventTreeNode(e, null)));
+                var sport = string.IsNullOrEmpty(n.Name) ? SportId : n.Name;
+                kids.AddRange((await _bf.ListEventsAsync(sport, c.Id, null, _scope == Scope.InPlay, from, to)).Select(e => EventTreeNode(e, null)));
             }
             else if (n.Tag is EventNode e)
                 foreach (var m in await _bf.ListEventMarketsAsync(e.Id)) kids.Add(Node(m.MarketName, m, null, "market"));
@@ -367,9 +383,11 @@ sealed class ClassicMainForm : Form
         var old = _tree.Nodes.Cast<TreeNode>().FirstOrDefault(x => x.Tag is string t && t == "favorites");
         bool wasOpen = old?.IsExpanded ?? true;
         old?.Remove();
-        var root = Node($"★ Favorites ({_opt.Favorites.Count})", "favorites", null, "none", bold: true);
+        var root = Node($"★ Favorites ({_opt.Favorites.Count + _opt.FavoriteCompetitions.Count})", "favorites", null, "none", bold: true);
+        foreach (var fc in _opt.FavoriteCompetitions)
+            root.Nodes.Add(WithPlaceholder(CompetitionTreeNode(new CompetitionNode(fc.CompetitionId, fc.Name, fc.Region, 0), fc.SportId, star: true)));
         foreach (var f in _opt.Favorites) root.Nodes.Add(EventTreeNode(new EventNode(f.EventId, f.Name, null, null, 0), null));
-        if (_opt.Favorites.Count == 0) root.Nodes.Add(Node("(right-click a match > Add to favorites)", "hint", null, "none"));
+        if (_opt.Favorites.Count == 0 && _opt.FavoriteCompetitions.Count == 0) root.Nodes.Add(Node("(right-click a match or competition > Add to favorites)", "hint", null, "none"));
         _tree.Nodes.Insert(0, root);
         if (wasOpen) root.Expand();
         RefreshLabels();

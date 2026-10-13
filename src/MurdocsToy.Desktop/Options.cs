@@ -5,6 +5,9 @@ namespace MurdocsToy.Desktop;
 /// <summary>A match the user starred.</summary>
 public record FavoriteEvent(string EventId, string Name);
 
+/// <summary>A competition the user starred (e.g. AFC Champions League, Primeira Liga); its matches count as favorites.</summary>
+public record FavoriteCompetition(string CompetitionId, string Name, string SportId, string? Region);
+
 /// <summary>User-editable settings, persisted to %APPDATA%\MurdocsToy\options.json.</summary>
 public sealed class Options
 {
@@ -17,6 +20,7 @@ public sealed class Options
     public bool AlwaysOnTop { get; set; } = false;
     public bool AutoCentre { get; set; } = true;
     public List<FavoriteEvent> Favorites { get; set; } = new();
+    public List<FavoriteCompetition> FavoriteCompetitions { get; set; } = new();
     public bool AutoOpenOnScore { get; set; } = false;   // open (or raise) a favorite match's ladder whenever its score changes
     // Classic interface staking
     public double ClassicBackStake { get; set; } = 2;
