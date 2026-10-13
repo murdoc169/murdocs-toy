@@ -53,6 +53,7 @@ sealed class ClassicMainForm : ChromeForm
         StartPosition = FormStartPosition.Manual; Location = new Point(40, 40);
         Theme.TitleBar(this, Cl.BarTop, Color.White);
         Cl.Dark = _opt.ClassicDark;
+        Cl.ThemeChanged += () => { if (!IsDisposed) ApplyTheme(); };
         LoadNames();
 
         var nav = new ClassicSection("Market Navigator", 0) { Dock = DockStyle.Fill };
@@ -287,7 +288,7 @@ sealed class ClassicMainForm : ChromeForm
     ToolStripMenuItem ThemeItem()
     {
         var item = new ToolStripMenuItem("Dark mode") { Checked = Cl.Dark };
-        item.Click += (_, _) => { Cl.Dark = !Cl.Dark; _opt.ClassicDark = Cl.Dark; _opt.Save(); ApplyTheme(); };
+        item.Click += (_, _) => Cl.SetDark(!Cl.Dark, _opt);
         return item;
     }
 

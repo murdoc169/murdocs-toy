@@ -149,12 +149,12 @@ sealed class ClassicLadderControl : Control
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
-        g.Clear(Color.White);
+        g.Clear(Cl.LBg);
         g.SmoothingMode = SmoothingMode.None;
         int W = Width;
         var w = Cols();
         var x = new int[w.Length + 1]; for (int i = 0; i < w.Length; i++) x[i + 1] = x[i] + w[i];
-        using var black = new Pen(Color.Black);
+        using var black = new Pen(Cl.Grid);
 
         PaintHeader(g, W);
         PaintInfo(g, W);
@@ -163,7 +163,7 @@ sealed class ClassicLadderControl : Control
 
         // summary row
         int sy = HeaderH + InfoH + ScaleH;
-        using (var b = new SolidBrush(Cl.Light)) g.FillRectangle(b, x[0], sy, w[0], SummaryH);
+        using (var b = new SolidBrush(Cl.Panel)) g.FillRectangle(b, x[0], sy, w[0], SummaryH);
         double? ltp = r?.LastPriceTraded;
         using (var b = new SolidBrush(Cl.LtpCell)) g.FillRectangle(b, x[1], sy, w[1], SummaryH);
         using (var b = new SolidBrush(Cl.PinkPale)) g.FillRectangle(b, x[3], sy, w[3], SummaryH);
@@ -240,7 +240,7 @@ sealed class ClassicLadderControl : Control
     {
         if (text == "") return;
         var flags = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.VerticalCenter | (centre ? TextFormatFlags.HorizontalCenter : right ? TextFormatFlags.Right : TextFormatFlags.Left);
-        TextRenderer.DrawText(g, text, font, r, colour, flags);
+        TextRenderer.DrawText(g, text, font, r, Cl.Adapt(colour), flags);
     }
 
     /// <summary>Black grid lines under a row and between its columns.</summary>
@@ -252,7 +252,7 @@ sealed class ClassicLadderControl : Control
 
     void PaintHeader(Graphics g, int W)
     {
-        TextRenderer.DrawText(g, RunnerName, Cl.Name, new Rectangle(6, 5, W - 90, 20), Color.Black, TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+        TextRenderer.DrawText(g, RunnerName, Cl.Name, new Rectangle(6, 5, W - 90, 20), Cl.Ink, TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
         var box = new Rectangle(W - 66, 3, 43, 21);
         using (var b = new SolidBrush(Cl.LtpCell)) g.FillRectangle(b, box);
         ControlPaint.DrawBorder3D(g, box, Border3DStyle.SunkenInner);
@@ -265,22 +265,22 @@ sealed class ClassicLadderControl : Control
     void PaintInfo(Graphics g, int W)
     {
         var rect = new Rectangle(0, HeaderH - 2, W, InfoH);
-        using (var b = new LinearGradientBrush(rect, Color.White, Color.FromArgb(0xEE, 0xEE, 0xEE), LinearGradientMode.Vertical)) g.FillRectangle(b, rect);
-        g.DrawLine(Pens.Black, 0, rect.Top, W, rect.Top); g.DrawLine(Pens.Black, 0, rect.Bottom - 1, W, rect.Bottom - 1);
+        using (var b = new LinearGradientBrush(rect, Cl.Dark ? Color.FromArgb(0x1B, 0x22, 0x26) : Color.White, Cl.Dark ? Color.FromArgb(0x20, 0x28, 0x2D) : Color.FromArgb(0xEE, 0xEE, 0xEE), LinearGradientMode.Vertical)) g.FillRectangle(b, rect);
+        g.DrawLine(Cl.GridPen, 0, rect.Top, W, rect.Top); g.DrawLine(Cl.GridPen, 0, rect.Bottom - 1, W, rect.Bottom - 1);
         var r = _runner;
         bool has = _pos.IfWins != 0 || _pos.IfLoses != 0;
         string sign(double v) => (v >= 0 ? "+" : "") + v.ToString("0.00");
-        TextRenderer.DrawText(g, "If it wins", Cl.Ui, new Point(8, rect.Top + 8), Color.DimGray);
+        TextRenderer.DrawText(g, "If it wins", Cl.Ui, new Point(8, rect.Top + 8), Cl.Dim);
         TextRenderer.DrawText(g, has ? sign(_pos.IfWins) : "-", Cl.UiBold, new Point(70, rect.Top + 8), _pos.IfWins >= 0 ? Color.FromArgb(0, 0x80, 0) : Color.Firebrick);
-        TextRenderer.DrawText(g, "If it loses", Cl.Ui, new Point(8, rect.Top + 24), Color.DimGray);
+        TextRenderer.DrawText(g, "If it loses", Cl.Ui, new Point(8, rect.Top + 24), Cl.Dim);
         TextRenderer.DrawText(g, has ? sign(_pos.IfLoses) : "-", Cl.UiBold, new Point(70, rect.Top + 24), _pos.IfLoses >= 0 ? Color.FromArgb(0, 0x80, 0) : Color.Firebrick);
         double bb = r?.Ex?.AvailableToBack?.FirstOrDefault()?.Price ?? 0, bl = r?.Ex?.AvailableToLay?.FirstOrDefault()?.Price ?? 0;
-        TextRenderer.DrawText(g, $"Back {(bb > 0 ? Cl.Price(bb) : "-")}    Lay {(bl > 0 ? Cl.Price(bl) : "-")}", Cl.Ui, new Point(8, rect.Top + 48), Color.Black);
+        TextRenderer.DrawText(g, $"Back {(bb > 0 ? Cl.Price(bb) : "-")}    Lay {(bl > 0 ? Cl.Price(bl) : "-")}", Cl.Ui, new Point(8, rect.Top + 48), Cl.Ink);
         if (r?.Status is string st && st != "ACTIVE") TextRenderer.DrawText(g, st, Cl.UiBold, new Point(8, rect.Top + 66), Color.Firebrick);
         _greenBtn = new Rectangle(W - 82, rect.Bottom - 30, 74, 22);
-        using (var b = new SolidBrush(has ? Color.FromArgb(0x90, 0xEE, 0x90) : Cl.Light)) g.FillRectangle(b, _greenBtn);
-        g.DrawRectangle(Pens.Black, _greenBtn);
-        Cell(g, "Green up", Cl.UiBold, _greenBtn, has ? Color.Black : Color.Gray, centre: true);
+        using (var b = new SolidBrush(has ? Color.FromArgb(0x90, 0xEE, 0x90) : Cl.Panel)) g.FillRectangle(b, _greenBtn);
+        g.DrawRectangle(Cl.GridPen, _greenBtn);
+        TextRenderer.DrawText(g, "Green up", Cl.UiBold, _greenBtn, has ? Cl.Ink : Color.Gray, TextFormatFlags.NoPadding | TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
     }
 
     void PaintScale(Graphics g, int W)
@@ -296,7 +296,7 @@ sealed class ClassicLadderControl : Control
             Cell(g, Scales[i].ToString(), Cl.Scale, cell, Color.FromArgb(0x1A, 0x1A, 0x66), centre: true);
             if (i > 0) g.DrawLine(sep, cell.X, rect.Top + 3, cell.X, rect.Bottom - 4);
         }
-        g.DrawLine(Pens.Black, 0, rect.Top, W, rect.Top);
+        g.DrawLine(Cl.GridPen, 0, rect.Top, W, rect.Top);
     }
 
     /// <summary>Green (waiting backs, upper) over red (waiting lays, lower), split in proportion to the money on each side.</summary>
@@ -313,7 +313,7 @@ sealed class ClassicLadderControl : Control
         g.FillRectangle(gd, x, Math.Max(top, split - band), width, Math.Min(band, split - top));
         g.FillRectangle(rd, x, split, width, Math.Min(band, top + height - split));
         g.FillRectangle(rb, x, split + band, width, Math.Max(0, top + height - split - band));
-        g.DrawRectangle(Pens.Black, x, top, width - 1, height - 1);
+        g.DrawRectangle(Cl.GridPen, x, top, width - 1, height - 1);
     }
 
     void PaintBottom(Graphics g, int W, int y, List<CurrentOrder> mine)
@@ -322,7 +322,7 @@ sealed class ClassicLadderControl : Control
         foreach (var (idx, side) in new[] { (0, "BACK"), (1, "LAY") })
         {
             var box = new Rectangle(idx * half + 2, y + 4, half - 4, h - 4);
-            g.FillRectangle(Brushes.White, box);
+            using (var wb = new SolidBrush(Cl.LBg)) g.FillRectangle(wb, box);
             ControlPaint.DrawBorder3D(g, box, Border3DStyle.Sunken);
             int ly = box.Y + 4;
             foreach (var o in mine.Where(o => o.Side == side).OrderByDescending(o => o.Price))

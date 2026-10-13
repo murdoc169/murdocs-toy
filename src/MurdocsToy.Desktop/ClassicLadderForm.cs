@@ -19,11 +19,11 @@ sealed partial class ClassicLadderForm : ChromeForm
     readonly System.Windows.Forms.Timer _timer = new();
 
     // tools
-    readonly Panel _infoRow = new() { Dock = DockStyle.Top, Height = 24, BackColor = Cl.Light };
+    readonly Panel _infoRow = new() { Dock = DockStyle.Top, Height = 24, BackColor = Cl.Panel };
     readonly ClassicClock _clock = new() { Text = "--:--:--" };
     readonly Label _backPct = new() { Dock = DockStyle.Fill, BackColor = Cl.BackRow, Font = Cl.Name, TextAlign = ContentAlignment.MiddleCenter };
     readonly Label _layPct = new() { Dock = DockStyle.Fill, BackColor = Cl.LayRow, Font = Cl.Name, TextAlign = ContentAlignment.MiddleCenter };
-    readonly Label _mid = new() { Dock = DockStyle.Fill, BackColor = Color.White, Font = Cl.Name, ForeColor = Color.FromArgb(0, 0x80, 0), TextAlign = ContentAlignment.MiddleCenter };
+    readonly Label _mid = new() { Dock = DockStyle.Fill, Font = Cl.Name, BackColor = Cl.LBg, ForeColor = Color.FromArgb(0, 0x80, 0), TextAlign = ContentAlignment.MiddleCenter };
     readonly Label _openCount = new() { Dock = DockStyle.Fill, BackColor = Cl.CountRow, Font = Cl.UiBold, TextAlign = ContentAlignment.MiddleCenter };
     readonly Label _matchedCount = new() { Dock = DockStyle.Fill, BackColor = Cl.CountRow, Font = Cl.UiBold, TextAlign = ContentAlignment.MiddleCenter };
     readonly TextBox _backBox = new() { Font = Cl.Name, TextAlign = HorizontalAlignment.Right, Width = 62 };
@@ -31,7 +31,7 @@ sealed partial class ClassicLadderForm : ChromeForm
     readonly Button _layMode = new() { Width = 20, Height = 20, FlatStyle = FlatStyle.Flat, Font = new Font("Tahoma", 9f, FontStyle.Bold), ForeColor = Color.White };
     readonly ComboBox _persist = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 140, Font = Cl.Ui };
     readonly Label _msg = new() { Dock = DockStyle.Fill, Font = Cl.Ui, ForeColor = Color.White, Padding = new Padding(6, 4, 6, 4) };
-    readonly Label _market1 = new() { Dock = DockStyle.Fill, Font = Cl.Ui, Padding = new Padding(6, 4, 6, 4), BackColor = Cl.Light };
+    readonly Label _market1 = new() { Dock = DockStyle.Fill, Font = Cl.Ui, Padding = new Padding(6, 4, 6, 4), BackColor = Cl.Panel, ForeColor = Cl.Ink };
     readonly CheckedListBox _selector = new() { Dock = DockStyle.Fill, Font = Cl.Ui, CheckOnClick = true, BorderStyle = BorderStyle.None };
 
     MarketBook? _book;
@@ -71,6 +71,11 @@ sealed partial class ClassicLadderForm : ChromeForm
             _ladders.Add((r, lc));
         }
         BuildTools(runners);
+        void Retheme() { if (IsDisposed) return; _tools.BackColor = Cl.ToolBg; _infoRow.BackColor = Cl.Panel; _market1.BackColor = Cl.Panel; _market1.ForeColor = Cl.Ink; _mid.BackColor = Cl.LBg; foreach (var lb in new CheckedListBox?[] { _selector, _autoSel }) if (lb != null) { lb.BackColor = Cl.LBg; lb.ForeColor = Cl.Ink; if (lb.Parent is Panel pp) pp.BackColor = Cl.LBg; } _infoRow.Invalidate(); foreach (var (_, l) in _ladders) l.Invalidate(); Invalidate(true); }
+        if (Cl.Dark) Retheme(); Cl.ThemeChanged += Retheme; FormClosed += (_, _) => Cl.ThemeChanged -= Retheme;
+        var themeMenu = new ContextMenuStrip(); themeMenu.Opening += (_, _) => { themeMenu.Items.Clear(); var d = new ToolStripMenuItem("Dark mode") { Checked = Cl.Dark }; d.Click += (_, _) => Cl.SetDark(!Cl.Dark, Opt); themeMenu.Items.Add(d); };
+        _infoRow.ContextMenuStrip = themeMenu; _market1.ContextMenuStrip = themeMenu;
+        foreach (var (_, l) in _ladders) l.ContextMenuStrip = themeMenu;
         Controls.Add(_grid); Controls.Add(_tools);
         RefreshStakeText();
 
@@ -99,7 +104,7 @@ sealed partial class ClassicLadderForm : ChromeForm
             int x = 6;
             var f = Cl.CurrencyFlag(_host.CurrencyCode);
             if (f != null && Flags.Get(f) != null) { g.DrawImage(Flags.Icon(f, new Size(16, 12)), x, 6); x += 22; }
-            TextRenderer.DrawText(g, _balance, Cl.Name, new Point(x, 4), Color.Black);
+            TextRenderer.DrawText(g, _balance, Cl.Name, new Point(x, 4), Cl.Ink);
             if (_book?.IsMarketDataDelayed == true) TextRenderer.DrawText(g, "DELAYED", Cl.UiBold, new Point(_infoRow.Width - 62, 5), Color.DarkOrange);
         };
 
@@ -312,7 +317,7 @@ sealed partial class ClassicLadderForm : ChromeForm
         var live = _host.Scores.Url == null ? null : _host.Scores.Find(_market.Event?.Name ?? "");
         bool flash = DateTime.UtcNow < _flashUntil;
         _mid.Text = live != null ? $"{live.HomeScore} - {live.AwayScore}" : (_orders.Count(o => o.Status == "EXECUTION_COMPLETE") > 0 ? "✔" : "0");
-        _mid.BackColor = flash ? Color.Gold : Color.White;
+        _mid.BackColor = flash ? Color.Gold : Cl.LBg;
         _openCount.Text = $"{_orders.Count(o => o.Status == "EXECUTABLE")} open";
         _matchedCount.Text = $"{_orders.Count(o => o.SizeMatched > 0)} matched";
 

@@ -7,11 +7,8 @@ namespace MurdocsToy.Desktop;
 static class Cl
 {
     public static readonly Color BarTop = Color.FromArgb(0x36, 0x5B, 0x63), BarBottom = Color.FromArgb(0x2A, 0x40, 0x4C), Border = Color.FromArgb(0x28, 0x3B, 0x48);
-    public static readonly Color ToolBg = Color.FromArgb(0x54, 0x6C, 0x7B), Light = Color.FromArgb(0xEF, 0xEF, 0xEF);
-    public static readonly Color PriceGrey = Color.FromArgb(0xD3, 0xD3, 0xD3), LtpCell = Color.FromArgb(0xF0, 0xF0, 0xF0);
-    public static readonly Color BlueStrong = Color.FromArgb(0x27, 0x97, 0xE6), BluePale = Color.FromArgb(0xBE, 0xDD, 0xF4);
-    public static readonly Color PinkStrong = Color.FromArgb(0xF9, 0x94, 0xA9), PinkPale = Color.FromArgb(0xF3, 0xDC, 0xE2);
-    public static readonly Color GreenBar = Color.FromArgb(0x96, 0xE1, 0x96), GreenBarDark = Color.FromArgb(0x64, 0xC8, 0x64);
+    public static readonly Color Light = Color.FromArgb(0xEF, 0xEF, 0xEF);
+                public static readonly Color GreenBar = Color.FromArgb(0x96, 0xE1, 0x96), GreenBarDark = Color.FromArgb(0x64, 0xC8, 0x64);
     public static readonly Color RedBar = Color.FromArgb(0xFF, 0x96, 0x96), RedBarDark = Color.FromArgb(0xFF, 0x64, 0x64);
     public static readonly Color ScaleTop = Color.FromArgb(0x9A, 0x9A, 0xFF), ScaleBottom = Color.FromArgb(0x84, 0x84, 0xFF);
     public static readonly Color StakeBtn = Color.FromArgb(0x64, 0x64, 0xFF), LiabilityBtn = Color.FromArgb(0xFF, 0x96, 0xFF);
@@ -20,7 +17,28 @@ static class Cl
     public static readonly Color TreeSelect = Color.FromArgb(0xEF, 0xCE, 0x86), ClockBlue = Color.FromArgb(0, 0, 0xFF);
 
     /// <summary>Dark mode applies to the navigator window; the ladders keep their light, Geek's Toy colours.</summary>
-    public static bool Dark { get; set; }
+    static bool _dark;
+    public static bool Dark { get => _dark; set { if (_dark == value) return; _dark = value; ThemeChanged?.Invoke(); } }
+    public static event Action? ThemeChanged;
+
+    /// <summary>Switches the palette, remembers the choice and tells every open window.</summary>
+    public static void SetDark(bool on, Options opt) { opt.ClassicDark = on; opt.Save(); Dark = on; }
+
+    // colours that change with the theme (ladder cells keep their blue / pink meaning, just darker)
+    public static Color ToolBg => Dark ? Color.FromArgb(0x2D, 0x3A, 0x42) : Color.FromArgb(0x54, 0x6C, 0x7B);
+    public static Color PriceGrey => Dark ? Color.FromArgb(0x2B, 0x32, 0x37) : Color.FromArgb(0xD3, 0xD3, 0xD3);
+    public static Color LtpCell => Dark ? Color.FromArgb(0x38, 0x42, 0x4A) : Color.FromArgb(0xF0, 0xF0, 0xF0);
+    public static Color BlueStrong => Dark ? Color.FromArgb(0x2F, 0x77, 0xB5) : Color.FromArgb(0x27, 0x97, 0xE6);
+    public static Color BluePale => Dark ? Color.FromArgb(0x1C, 0x3A, 0x54) : Color.FromArgb(0xBE, 0xDD, 0xF4);
+    public static Color PinkStrong => Dark ? Color.FromArgb(0xB0, 0x4E, 0x68) : Color.FromArgb(0xF9, 0x94, 0xA9);
+    public static Color PinkPale => Dark ? Color.FromArgb(0x4B, 0x27, 0x33) : Color.FromArgb(0xF3, 0xDC, 0xE2);
+    public static Color LBg => Dark ? Color.FromArgb(0x14, 0x19, 0x1C) : Color.White;
+    public static Color Grid => Dark ? Color.FromArgb(0x4A, 0x55, 0x5D) : Color.Black;
+    public static Color Dim => Dark ? Color.Silver : Color.DimGray;
+    static readonly Pen DarkGridPen = new(Color.FromArgb(0x4A, 0x55, 0x5D));
+    public static Pen GridPen => Dark ? DarkGridPen : Pens.Black;
+    /// <summary>Dark text drawn for the light theme becomes light text in dark mode; colours that carry meaning (red, green) stay.</summary>
+    public static Color Adapt(Color c) => Dark && c.R < 0x70 && c.G < 0x70 && c.B < 0x70 ? Ink : c;
     public static Color Panel => Dark ? Color.FromArgb(0x1F, 0x27, 0x2C) : Light;
     public static Color Ink => Dark ? Color.FromArgb(0xE8, 0xEB, 0xEC) : Color.Black;
     public static Color Sel => Dark ? Color.FromArgb(0x3A, 0x57, 0x66) : TreeSelect;
