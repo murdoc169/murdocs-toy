@@ -130,7 +130,7 @@ async function find() {
     d.onclick = () => { state.market = m; state.book = null; state.sel = null; [...box.children].forEach(c => c.classList.remove('sel')); d.classList.add('sel'); poll(); };
     box.append(d);
   }
-  if (!state.market && box.firstChild) box.firstChild.click();
+  if (!state.market && box.firstChild) (box.children[Math.max(0, state.markets.findIndex(m => m.marketName === 'Match Odds'))]).click();
 }
 $('find').onclick = find; $('q').onkeydown = e => e.key === 'Enter' && find();
 

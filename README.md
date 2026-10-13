@@ -7,6 +7,18 @@ An open-source Betfair Exchange trading client with two front ends:
 
 Both use only Betfair's public, documented [Exchange API-NG](https://betfair-developer-docs.atlassian.net/wiki/spaces/1smk3cen4v3lu3yomq5qye0ni/overview). This is an independent, clean-room project. It contains no code from any commercial trading product and is not affiliated with Betfair.
 
+## Screenshots
+
+**Desktop (WinForms)**: market browser, runner grid with 3-deep back/lay, price ladder, current orders.
+
+![Murdoc's Toy desktop app](docs/desktop.png)
+
+**Web UI**: same features, dark theme, stake presets, click-to-bet ladder.
+
+![Murdoc's Toy web UI](docs/web.png)
+
+*Screenshots use a delayed Betfair key (data is delayed) and show public market data only.*
+
 ## You need
 
 - A Betfair account and an **application key** ([create one](https://apps.betfair.com/visualisers/api-ng-account-operations/) with *Create Developer App Keys*).

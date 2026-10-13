@@ -6,6 +6,7 @@ sealed class MainForm : Form
 {
     readonly BetfairClient _bf;
     readonly bool _smoke;
+    readonly bool _privacy; // --privacy hides balance and orders (for screenshots and screen sharing)
 
     readonly ComboBox _sports = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 140 };
     readonly TextBox _search = new() { Width = 160, PlaceholderText = "search markets" };
@@ -38,11 +39,12 @@ sealed class MainForm : Form
 
     static readonly Color BackBlue = Color.FromArgb(160, 210, 250), LayPink = Color.FromArgb(250, 190, 205);
 
-    public MainForm(BetfairClient bf, bool smoke)
+    public MainForm(BetfairClient bf, bool smoke, bool privacy = false)
     {
-        _bf = bf; _smoke = smoke;
+        _bf = bf; _smoke = smoke; _privacy = privacy;
         Text = "Murdoc's Toy";
-        Size = new Size(1200, 780);
+        Size = new Size(1280, 800);
+        MinimumSize = new Size(900, 600);
         StartPosition = FormStartPosition.CenterScreen;
 
         var top = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 34, Padding = new Padding(4, 3, 4, 0) };
@@ -67,6 +69,8 @@ sealed class MainForm : Form
 
         Controls.Add(main); Controls.Add(top); Controls.Add(_status);
 
+        _runners.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
+        _runners.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
         _runners.Columns.AddRange(
             Col("Runner", 3), Col("Back 3"), Col("Back 2"), Col("Back"), Col("Lay"), Col("Lay 2"), Col("Lay 3"), Col("Last"), Col("Matched"));
         _ladder.Columns.AddRange(Col("Traded"), Col("Back"), Col("Price"), Col("Lay"));
@@ -80,6 +84,16 @@ sealed class MainForm : Form
         _orders.CellDoubleClick += async (_, e) => await CancelOrder(e.RowIndex);
         _timer.Tick += async (_, _) => await Poll();
         Shown += async (_, _) => await Startup();
+        // Splitter positions only make sense once the window has its real size.
+        void Layout3()
+        {
+            if (main.Width < 600 || right.Height < 300) return;
+            main.SplitterDistance = Math.Min(380, main.Width / 3);
+            centre.SplitterDistance = Math.Max(300, (int)(centre.Width * 0.68));
+            right.SplitterDistance = (int)(right.Height * 0.68);
+        }
+        Load += (_, _) => Layout3();
+        Shown += (_, _) => Layout3();
     }
 
     static DataGridViewTextBoxColumn Col(string name, float weight = 1) =>
@@ -103,6 +117,7 @@ sealed class MainForm : Form
 
     async Task RefreshFunds()
     {
+        if (_privacy) return;
         try
         {
             var f = await _bf.GetAccountFundsAsync();
@@ -123,7 +138,8 @@ sealed class MainForm : Form
             foreach (var m in _catalog)
                 _markets.Items.Add($"{m.MarketStartTime?.ToLocalTime():dd/MM HH:mm}  {m.Event?.Name} - {m.MarketName}");
             Say($"{_catalog.Count} markets");
-            if (_smoke && _catalog.Count > 0) _markets.SelectedIndex = 0;
+            if (_catalog.Count > 0 && _market == null)
+                _markets.SelectedIndex = Math.Max(0, _catalog.FindIndex(m => m.MarketName == "Match Odds"));
         }
         catch (Exception ex) { Say(ex.Message); }
     }
@@ -239,6 +255,7 @@ sealed class MainForm : Form
 
     async Task DrawOrders()
     {
+        if (_privacy) return;
         try { _current = await _bf.ListCurrentOrdersAsync(); }
         catch (BetfairException) { return; }
         _orders.Rows.Clear();
