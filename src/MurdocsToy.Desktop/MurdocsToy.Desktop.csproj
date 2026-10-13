@@ -5,6 +5,10 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>MurdocsToy</AssemblyName>
+    <Version>0.1.0</Version>
+    <Product>Murdoc's Toy</Product>
+    <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\MurdocsToy.Core\MurdocsToy.Core.csproj" />

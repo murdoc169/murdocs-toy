@@ -13,6 +13,19 @@ Both use only Betfair's public, documented [Exchange API-NG](https://betfair-dev
   - A **delayed** key lets you browse markets, prices and the ladder (data is delayed). **Placing and cancelling bets needs a live key**, which Betfair activates on request.
 - .NET 8 SDK (desktop, tests) and/or Node 20+ (web).
 
+## Install (Windows)
+
+Download `MurdocsToy-Setup-0.1.0.exe` from the [Releases](../../releases) page and run it. It needs no .NET install, adds a Start Menu entry and an optional desktop shortcut, and can be removed from *Apps & features*. Windows SmartScreen may warn because the installer is unsigned.
+
+On first launch enter your Betfair username, password and application key. The username and key are remembered in `%APPDATA%\MurdocsToy\settings.json`; the password is never stored.
+
+To build the installer yourself:
+
+```bash
+dotnet publish src/MurdocsToy.Desktop -c Release -r win-x64 --self-contained true   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o dist/app
+ISCC.exe installer/MurdocsToy.iss      # needs Inno Setup 6 -> dist/MurdocsToy-Setup-0.1.0.exe
+```
+
 ## Configure
 
 Credentials are read from environment variables (or typed into the login form). Never commit them: `.env*` is gitignored.
@@ -23,7 +36,7 @@ BETFAIR_PASSWORD=...
 BETFAIR_APP_KEY=...
 ```
 
-## Run
+## Run from source
 
 ```bash
 # web UI -> http://127.0.0.1:8080  (binds to localhost only)

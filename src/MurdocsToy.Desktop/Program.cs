@@ -17,9 +17,18 @@ static class Program
 /// <summary>Credentials come from the dialog; fields are pre-filled from BETFAIR_* environment variables.</summary>
 sealed class LoginForm : Form
 {
-    readonly TextBox _user = new() { Text = Environment.GetEnvironmentVariable("BETFAIR_USERNAME") ?? "" };
+    static readonly string SettingsPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MurdocsToy", "settings.json");
+    record Saved(string? Username, string? AppKey);
+    static Saved LoadSaved()
+    {
+        try { return System.Text.Json.JsonSerializer.Deserialize<Saved>(File.ReadAllText(SettingsPath)) ?? new(null, null); }
+        catch { return new(null, null); }
+    }
+    static readonly Saved _saved = LoadSaved();
+    readonly TextBox _user = new() { Text = Environment.GetEnvironmentVariable("BETFAIR_USERNAME") ?? _saved.Username ?? "" };
     readonly TextBox _pass = new() { UseSystemPasswordChar = true, Text = Environment.GetEnvironmentVariable("BETFAIR_PASSWORD") ?? "" };
-    readonly TextBox _key = new() { Text = Environment.GetEnvironmentVariable("BETFAIR_APP_KEY") ?? "" };
+    readonly TextBox _key = new() { Text = Environment.GetEnvironmentVariable("BETFAIR_APP_KEY") ?? _saved.AppKey ?? "" };
     readonly Label _status = new() { AutoSize = true, ForeColor = Color.Firebrick };
     readonly Button _ok = new() { Text = "Log in", DialogResult = DialogResult.None };
     public BetfairClient? Client { get; private set; }
@@ -51,6 +60,12 @@ sealed class LoginForm : Form
         {
             var c = new BetfairClient(_key.Text.Trim());
             await c.LoginAsync(_user.Text.Trim(), _pass.Text);
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
+                File.WriteAllText(SettingsPath, System.Text.Json.JsonSerializer.Serialize(new Saved(_user.Text.Trim(), _key.Text.Trim())));
+            }
+            catch { /* remembering the username and app key is optional; the password is never stored */ }
             Client = c; DialogResult = DialogResult.OK; Close();
         }
         catch (Exception ex) { _status.Text = ex.Message; _ok.Enabled = true; }
