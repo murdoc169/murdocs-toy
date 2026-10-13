@@ -38,11 +38,13 @@ sealed partial class ClassicLadderForm
         var url = BetfairLinks.MarketPage(_market.MarketId, _market.EventType?.Name);
         try
         {
-            var env = await CoreWebView2Environment.CreateAsync(null, Profile.File("webview"));
+            var px = ProxyStore.Load();
+            var env = await CoreWebView2Environment.CreateAsync(null, Profile.File("webview"), px.Enabled && px.Usable ? new CoreWebView2EnvironmentOptions { AdditionalBrowserArguments = "--proxy-server=" + px.BrowserArgument } : null);
             _web = new WebView2 { Dock = DockStyle.Fill };
             _tv.Body.Controls.Add(_web);
             await _web.EnsureCoreWebView2Async(env);
             _web.CoreWebView2.Settings.AreDevToolsEnabled = false;
+            if (px.Enabled && px.Username != "") _web.CoreWebView2.BasicAuthenticationRequested += (_, a) => { a.Response.UserName = px.Username; a.Response.Password = px.PlainPassword; };
             _web.CoreWebView2.NewWindowRequested += (_, e) => { e.Handled = true; _web.CoreWebView2.Navigate(e.Uri); };   // stay inside the panel
             _web.ZoomFactor = 0.55;                                                                                        // fit the top of the page (where the player sits) in a small panel
             _web.CoreWebView2.Navigate(url);

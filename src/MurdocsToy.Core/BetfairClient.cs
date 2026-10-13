@@ -18,12 +18,18 @@ public sealed class BetfairClient : IDisposable
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
     };
 
-    readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(30) };
+    readonly HttpClient _http;
     readonly string _appKey;
     string? _session;
     string? _user, _pass;   // kept in memory only, to renew an expired session
 
-    public BetfairClient(string appKey) => _appKey = appKey;
+    /// <summary>An optional proxy (HTTP or SOCKS5) for every call to Betfair.</summary>
+    public BetfairClient(string appKey, System.Net.IWebProxy? proxy = null)
+    {
+        _appKey = appKey;
+        _http = proxy == null ? new HttpClient { Timeout = TimeSpan.FromSeconds(30) }
+                              : new HttpClient(new HttpClientHandler { Proxy = proxy, UseProxy = true }) { Timeout = TimeSpan.FromSeconds(30) };
+    }
 
     public bool IsLoggedIn => _session != null;
 

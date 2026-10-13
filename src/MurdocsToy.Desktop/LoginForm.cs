@@ -43,7 +43,7 @@ sealed class InterfacePicker : Control
     }
 }
 
-/// <summary>Login window. Fields are pre-filled from BETFAIR_* environment variables, else from the remembered login.</summary>
+/// <summary>Login window. Fields are pre-filled from BETFAIR_* environment variables, else from the remembered login; you press Log in.</summary>
 sealed class LoginForm : Form
 {
     static readonly Color Back = Color.FromArgb(20, 23, 28), FieldBack = Color.FromArgb(28, 33, 41), Muted = Color.FromArgb(140, 148, 160);
@@ -52,6 +52,9 @@ sealed class LoginForm : Form
     readonly TextBox _user = Field(), _pass = Field(true), _key = Field();
     readonly InterfacePicker _ui = new() { Dock = DockStyle.Top, Visible = false };   // deprecated: the Modern views are no longer offered here
     readonly CheckBox _remember = new() { Text = "Remember me", AutoSize = false, Height = 28, Dock = DockStyle.Top, ForeColor = Muted, Font = new Font("Segoe UI", 9f) };
+    readonly CheckBox _useProxy = new() { Text = "Use proxy", AutoSize = false, Dock = DockStyle.Fill, ForeColor = Muted, Font = new Font("Segoe UI", 9f) };
+    readonly Button _proxyBtn = new() { Text = "Proxy settings...", Dock = DockStyle.Right, Width = 120, FlatStyle = FlatStyle.Flat, ForeColor = Muted, BackColor = Color.FromArgb(28, 33, 41), Font = new Font("Segoe UI", 8.5f), Cursor = Cursors.Hand };
+    ProxySettings _proxy = ProxyStore.Load();
     readonly Label _status = new() { AutoSize = false, Height = 22, ForeColor = Muted, Font = new Font("Segoe UI", 9f), Dock = DockStyle.Top };
     readonly Button _ok = new() { Text = "Log in", Height = 38, Dock = DockStyle.Top, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 10.5f), ForeColor = Color.White, BackColor = Color.FromArgb(44, 120, 84), Cursor = Cursors.Hand };
     readonly bool _autoLogin;
@@ -73,13 +76,14 @@ sealed class LoginForm : Form
         _pass.Text = Environment.GetEnvironmentVariable("BETFAIR_PASSWORD") ?? LoginStore.Password(_saved) ?? "";
         _key.Text = Environment.GetEnvironmentVariable("BETFAIR_APP_KEY") ?? _saved.AppKey ?? "";
         _remember.Checked = _saved.Remember || _saved.Username == null;
-        // start straight away when everything needed is already known
-        _autoLogin = !stayOpen && (forceAutoLogin || (_remember.Checked && _user.Text != "" && _pass.Text != "" && _key.Text != ""));
+        // the form always opens with the saved details filled in and waits for Log in; only the --autologin / --smoke test flags skip that
+        _autoLogin = !stayOpen && forceAutoLogin;
+        _useProxy.Checked = _proxy.Enabled && _proxy.Usable;
 
         Text = "Murdoc's Toy";
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(380, 372);
+        ClientSize = new Size(380, 410);
         BackColor = Back; ForeColor = Color.White; Font = new Font("Segoe UI", 9f);
         Theme.TitleBar(this, Back, Color.White);
 
@@ -90,7 +94,16 @@ sealed class LoginForm : Form
 
         // docked Top: the last control added sits at the top
         var body = new Panel { Dock = DockStyle.Fill, Padding = new Padding(32, 28, 32, 16), BackColor = Back };
-        body.Controls.Add(_ok); body.Controls.Add(Gap(6)); body.Controls.Add(_status); body.Controls.Add(_remember);
+        var proxyRow = new Panel { Dock = DockStyle.Top, Height = 30, BackColor = Back };
+        _proxyBtn.FlatAppearance.BorderColor = Color.FromArgb(52, 60, 74);
+        proxyRow.Controls.Add(_useProxy); proxyRow.Controls.Add(_proxyBtn);
+        _proxyBtn.Click += (_, _) =>
+        {
+            using var f = new ProxyForm(_proxy with { Enabled = _useProxy.Checked });
+            if (f.ShowDialog(this) != DialogResult.OK) return;
+            _proxy = f.Result with { Enabled = _useProxy.Checked }; ProxyStore.Save(_proxy);
+        };
+        body.Controls.Add(_ok); body.Controls.Add(Gap(6)); body.Controls.Add(_status); body.Controls.Add(proxyRow); body.Controls.Add(_remember);
                 body.Controls.Add(_key); body.Controls.Add(Caption("App key"));
         body.Controls.Add(_pass); body.Controls.Add(Caption("Password"));
         body.Controls.Add(_user); body.Controls.Add(Caption("Username"));
@@ -106,7 +119,9 @@ sealed class LoginForm : Form
         _ok.Enabled = false; _status.Text = "Logging in..."; _status.ForeColor = Muted;
         try
         {
-            var c = new BetfairClient(_key.Text.Trim());
+            _proxy = _proxy with { Enabled = _useProxy.Checked }; ProxyStore.Save(_proxy);
+            if (_proxy.Enabled && !_proxy.Usable) throw new InvalidOperationException("The proxy is on but not set up: open Proxy settings.");
+            var c = new BetfairClient(_key.Text.Trim(), _proxy.ToWebProxy());
             await c.LoginAsync(_user.Text.Trim(), _pass.Text);
             LoginStore.Save(_user.Text.Trim(), _key.Text.Trim(), _pass.Text, _remember.Checked, Ui);
             Client = c; DialogResult = DialogResult.OK; Close();
