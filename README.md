@@ -15,7 +15,7 @@ Choose one in the **Interface** box on the login form (Classic is the default; y
 
 ![Modern dark main window](docs/desktop.png)
 
-**Classic**: a dense, traditional trading layout. A narrow navigator window with the account balance, a sport header, *Today / Tomorrow / Next 2 days / In-play* and *All / Favorites* filters, and a **country > competition > match > market** tree with flags. Each match opens in a trading window with a **ladder per runner side by side** (name and stake header, position panel, bar-scale strip, summary row, price rows with a grey price column, pink *lay* and blue *back* columns, your own orders, traded volume, a green/red depth bar and order boxes) next to a slate **tools panel**: clock, book percentages, back and lay staking (lay can be stake or liability), bet persistence, *Green up all*, *Cancel all*, market information and a ladder selector. The window title shows the matched amount, e.g. `Viking v Bayern Munich - Match Odds   €233 658`.
+**Classic**: a dense, traditional trading layout. A narrow navigator window with the account balance, a sport header, a date filter (*Today / Tomorrow / Next 2 days*) and a scope filter (*All / In-play / Favorites*, opening on In-play), and a **country > competition > match > market** tree with flags. Each match opens in a trading window with a **ladder per runner side by side** (name and stake header, position panel, bar-scale strip, summary row, price rows with a grey price column, pink *lay* and blue *back* columns, your own orders, traded volume, a green/red depth bar and order boxes) next to a slate **tools panel**: clock, book percentages, back and lay staking (lay can be stake or liability), bet persistence, *Green up all*, *Cancel all*, market information and a ladder selector. The window title shows the matched amount, e.g. `Viking v Bayern Munich - Match Odds   €233 658`.
 
 ![Classic navigator](docs/classic-main.png)
 
@@ -51,7 +51,7 @@ Choose one in the **Interface** box on the login form (Classic is the default; y
 
 ## Install (Windows)
 
-Download `MurdocsToy-Setup-0.4.1.exe` from the [Releases](../../releases) page and run it. It needs no .NET install, adds a Start Menu entry and an optional desktop shortcut, and can be removed from *Apps & features*. Windows SmartScreen may warn because the installer is unsigned.
+Download `MurdocsToy-Setup-0.4.2.exe` from the [Releases](../../releases) page and run it. It needs no .NET install, adds a Start Menu entry and an optional desktop shortcut, and can be removed from *Apps & features*. Windows SmartScreen may warn because the installer is unsigned.
 
 On first launch enter your Betfair username, password and application key, and pick an interface.
 
@@ -60,7 +60,7 @@ To build the installer yourself:
 ```bash
 dotnet publish src/MurdocsToy.Desktop -c Release -r win-x64 --self-contained true \
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o dist/app
-ISCC.exe installer/MurdocsToy.iss      # needs Inno Setup 6 -> dist/MurdocsToy-Setup-0.4.1.exe
+ISCC.exe installer/MurdocsToy.iss      # needs Inno Setup 6 -> dist/MurdocsToy-Setup-0.4.2.exe
 ```
 
 ## Configure

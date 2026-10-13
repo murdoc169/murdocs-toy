@@ -9,7 +9,8 @@ namespace MurdocsToy.Desktop;
 /// </summary>
 sealed class ClassicMainForm : Form
 {
-    enum When { Today, Tomorrow, Next2Days, InPlay }
+    enum When { Today, Tomorrow, Next2Days }
+    enum Scope { All, InPlay, Favorites }
 
     readonly AppHost _host;
     readonly BetfairClient _bf;
@@ -33,7 +34,7 @@ sealed class ClassicMainForm : Form
     Dictionary<string, string> _countryNames = new();
     Dictionary<string, string> _iso3 = new();
     When _when = When.Today;
-    bool _favoritesOnly;
+    Scope _scope = Scope.InPlay;     // opens on what is live right now
     string _balance = "", _currencyFlag = "";
     string _favSig = "";
     Font? _bold;
@@ -156,11 +157,11 @@ sealed class ClassicMainForm : Form
         using var edge = new Pen(Color.FromArgb(0xC0, 0xC0, 0xC0));
         g.DrawLine(edge, 0, 0, w, 0); g.DrawLine(edge, _scopeRect.X, 0, _scopeRect.X, _filters.Height);
         g.DrawImage(ClIcons.Calendar, 5, 4);
-        var whenText = _when switch { When.Today => "Today", When.Tomorrow => "Tomorrow", When.Next2Days => "2 days", _ => "In-play" };
-        TextRenderer.DrawText(g, whenText, Cl.Filter, new Point(26, 3), Color.Black);
+        var whenText = _when switch { When.Today => "Today", When.Tomorrow => "Tomorrow", _ => "2 days" };
+        TextRenderer.DrawText(g, whenText, Cl.Filter, new Point(26, 3), _scope == Scope.InPlay ? Color.Gray : Color.Black);   // the date filter does not apply to in-play
         Arrow(g, _whenRect.Right - 10, 12);
         g.DrawImage(ClIcons.Pitch, _scopeRect.X + 6, 4);
-        TextRenderer.DrawText(g, _favoritesOnly ? "Favorites" : "All", Cl.Filter, new Point(_scopeRect.X + 28, 3), Color.Black);
+        TextRenderer.DrawText(g, _scope switch { Scope.InPlay => "In-play", Scope.Favorites => "Favorites", _ => "All" }, Cl.Filter, new Point(_scopeRect.X + 28, 3), Color.Black);
         Arrow(g, w - 10, 12);
     }
 
@@ -169,20 +170,20 @@ sealed class ClassicMainForm : Form
         var menu = new ContextMenuStrip();
         if (_whenRect.Contains(e.Location))
         {
-            foreach (var (w, label) in new[] { (When.Today, "Today"), (When.Tomorrow, "Tomorrow"), (When.Next2Days, "Next 2 days"), (When.InPlay, "In-play") })
+            foreach (var (w, label) in new[] { (When.Today, "Today"), (When.Tomorrow, "Tomorrow"), (When.Next2Days, "Next 2 days") })
             {
                 var item = new ToolStripMenuItem(label) { Checked = _when == w };
-                item.Click += async (_, _) => { _when = w; _filters.Invalidate(); await LoadTree(); };
+                item.Click += async (_, _) => { _when = w; if (_scope == Scope.InPlay) _scope = Scope.All; _filters.Invalidate(); await LoadTree(); };
                 menu.Items.Add(item);
             }
             menu.Show(_filters, new Point(_whenRect.X, _whenRect.Bottom));
         }
         else if (_scopeRect.Contains(e.Location))
         {
-            foreach (var (fav, label) in new[] { (false, "All"), (true, "Favorites") })
+            foreach (var (sc, label) in new[] { (Scope.All, "All"), (Scope.InPlay, "In-play"), (Scope.Favorites, "Favorites") })
             {
-                var item = new ToolStripMenuItem(label) { Checked = _favoritesOnly == fav };
-                item.Click += async (_, _) => { _favoritesOnly = fav; _filters.Invalidate(); await LoadTree(); };
+                var item = new ToolStripMenuItem(label) { Checked = _scope == sc };
+                item.Click += async (_, _) => { _scope = sc; _filters.Invalidate(); await LoadTree(); };
                 menu.Items.Add(item);
             }
             menu.Show(_filters, new Point(_scopeRect.X, _scopeRect.Bottom));
@@ -300,10 +301,10 @@ sealed class ClassicMainForm : Form
         {
             _status.Text = "Loading...";
             _loads.Clear(); _tree.Nodes.Clear();
-            if (!_favoritesOnly)
+            if (_scope != Scope.Favorites)
             {
                 var (from, to) = Window();
-                var comps = await _bf.ListCompetitionsAsync(SportId, _when == When.InPlay, from, to);
+                var comps = await _bf.ListCompetitionsAsync(SportId, _scope == Scope.InPlay, from, to);
                 foreach (var grp in comps.GroupBy(c => Country(c).Name).OrderBy(g => g.Key == "International" ? "~" : g.Key))
                 {
                     var flag = Country(grp.First()).Flag;
@@ -315,7 +316,7 @@ sealed class ClassicMainForm : Form
             }
             SyncFavorites();
             _ = RefreshVolumes();
-            _status.Text = _tree.Nodes.Count <= 1 && !_favoritesOnly ? "Nothing found" : "";
+            _status.Text = _tree.Nodes.Count <= 1 && _scope != Scope.Favorites ? (_scope == Scope.InPlay ? "Nothing in-play right now" : "Nothing found") : "";
             RefreshLabels();
         }
         catch (Exception ex) { _status.Text = ex.Message; }
@@ -339,7 +340,7 @@ sealed class ClassicMainForm : Form
             if (n.Tag is CompetitionNode c)
             {
                 var (from, to) = Window();
-                kids.AddRange((await _bf.ListEventsAsync(SportId, c.Id, null, _when == When.InPlay, from, to)).Select(e => EventTreeNode(e, null)));
+                kids.AddRange((await _bf.ListEventsAsync(SportId, c.Id, null, _scope == Scope.InPlay, from, to)).Select(e => EventTreeNode(e, null)));
             }
             else if (n.Tag is EventNode e)
                 foreach (var m in await _bf.ListEventMarketsAsync(e.Id)) kids.Add(Node(m.MarketName, m, null, "market"));
@@ -418,6 +419,8 @@ sealed class ClassicMainForm : Form
     /// <summary>Opens the first match found (used by --smoke / --open-ladder).</summary>
     async Task OpenFirstLadder()
     {
+        if (_scope == Scope.InPlay && !_tree.Nodes.Cast<TreeNode>().Any(x => x.Tag is string t && t == "country"))
+        { _scope = Scope.All; _filters.Invalidate(); await LoadTree(); }     // nothing live right now: fall back to the day's matches
         TreeNode? node = _tree.Nodes.Cast<TreeNode>().FirstOrDefault(x => x.Tag is string t && t == "country");
         if (!string.IsNullOrEmpty(_search))
         {
