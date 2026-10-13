@@ -1,3 +1,4 @@
+using MurdocsToy.Core;
 using System.Text.Json;
 
 namespace MurdocsToy.Desktop;
@@ -39,6 +40,10 @@ public sealed class Options
     public int AutoMaxBets { get; set; } = 20;
     public bool AutoAllowDelayed { get; set; } = false;
 
+    // automation rules (the master switch is never saved: it always starts OFF)
+    public List<AutomationRule> Rules { get; set; } = new();
+    public bool RulesAllowDelayed { get; set; } = false;
+    public int RulesMaxBets { get; set; } = 30;
     public string RelayUrl { get; set; } = "";   // live-score relay, e.g. ws://relay-host:9001 (empty = off)
     public bool MirrorToWeb { get; set; } = true;   // serve the web UI from this app (http://localhost:8080)
     public float FontSize { get; set; } = 9f;

@@ -29,6 +29,11 @@ The app opens in the **Classic** interface. The earlier *Modern dark/light* inte
 
 - **Automation** (below the ladder selector): one switch, **OFF or ON**. When ON, a **goal** (reported by the score relay) or a **suspension** (bets go in the moment the market reopens, since Betfair refuses bets while suspended) places a bet you configure on every ticked selection: back or lay, an amount (or liability for lay), priced from the **last traded price** or the **best available price**, moved a number of **ticks** up or down the Betfair price ladder. It asks you to confirm when you turn it on, showing the worst-case loss, has a cooldown between firings, stops after 20 bets or 3 failures in a row, and refuses to act on delayed prices unless you allow it. It always starts OFF.
 - **Live video panel**: click the little screen in the status panel. A small browser (Edge WebView2) opens inside the ladder window on the market's page on betfair.com; log in to the website there once and Betfair's own player appears for the events your account is eligible for. Shift-click opens your normal browser instead. The app never handles the video stream (Betfair does not offer it through the API).
+- **Settings** (right-click the balance bar at the top of the navigator): General, Betting (preset stakes, back stake, lay amount or liability, bet persistence, confirm every bet), Scores & favorites (relay address, auto-open, remove favorite matches and competitions), Web, Account (forget saved login) and **Automation rules**.
+- **Automation rules**: a whole tab for rules that work across markets, not just the ladder you have open. A rule says *which markets* (the name contains, e.g. "Correct Score"), *which matches* (your favorites by default, or matches with an open ladder, or any match with a live score), and *what to bet*: back or lay, an amount (or liability), on named selections, priced from the last traded price (or the best available) plus or minus ticks. Selections can follow the game with tokens: `{score}` is the score now, `{before}` the score before the goal, `{home+1}` and `{away+1}` the score if the next goal goes to the home or away side. Example: *on a goal, lay `{score}` in Correct Score*. A goal means the total goals went up (a goal taken away by VAR does not count); if the market is suspended the bets wait up to 90 seconds for it to reopen. One master switch, **always OFF at start-up**, turns the rules on after a confirmation; a cooldown per rule and match, a cap on bets per match and per session, a stop after 3 failures in a row, and no bets on delayed prices unless you allow it. A red **RULES ON** badge shows in the navigator while they are on. The tab keeps a log of everything the rules did.
+
+![Automation rules](docs/settings-rules.png)
+
 - **Hover help**: every control and every region of the ladder explains itself when you hover over it.
 - **Auto-expand**: a tree level with a single choice opens by itself.
 
@@ -64,7 +69,7 @@ The app opens in the **Classic** interface. The earlier *Modern dark/light* inte
 
 ## Install (Windows)
 
-Download `MurdocsToy-Setup-0.5.2.exe` from the [Releases](../../releases) page and run it. It needs no .NET install, adds a Start Menu entry and an optional desktop shortcut, and can be removed from *Apps & features*. Windows SmartScreen may warn because the installer is unsigned.
+Download `MurdocsToy-Setup-0.6.0.exe` from the [Releases](../../releases) page and run it. It needs no .NET install, adds a Start Menu entry and an optional desktop shortcut, and can be removed from *Apps & features*. Windows SmartScreen may warn because the installer is unsigned.
 
 On first launch enter your Betfair username, password and application key, and pick an interface.
 
@@ -73,7 +78,7 @@ To build the installer yourself:
 ```bash
 dotnet publish src/MurdocsToy.Desktop -c Release -r win-x64 --self-contained true \
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o dist/app
-ISCC.exe installer/MurdocsToy.iss      # needs Inno Setup 6 -> dist/MurdocsToy-Setup-0.5.2.exe
+ISCC.exe installer/MurdocsToy.iss      # needs Inno Setup 6 -> dist/MurdocsToy-Setup-0.6.0.exe
 ```
 
 ## Configure

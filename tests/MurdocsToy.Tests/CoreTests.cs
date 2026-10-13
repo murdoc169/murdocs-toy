@@ -317,3 +317,37 @@ public class BetfairLinkTests
     [InlineData("1.5", null, "https://www.betfair.com/exchange/plus/football/market/1.5")]
     public void MarketPage(string id, string? sport, string expected) => Assert.Equal(expected, BetfairLinks.MarketPage(id, sport));
 }
+
+public class RuleLogicTests
+{
+    static readonly (long, string)[] CorrectScore = { (1, "0 - 0"), (2, "1 - 0"), (3, "0 - 1"), (4, "1 - 1"), (5, "2 - 0"), (6, "Any Other Home Win") };
+
+    [Theory]
+    [InlineData(0, 0, 1, 0, true)] [InlineData(1, 0, 1, 1, true)] [InlineData(2, 1, 2, 0, false)] [InlineData(1, 1, 1, 1, false)] [InlineData(2, 1, 1, 1, false)]
+    public void OnlyGoalsCount(int ph, int pa, int h, int a, bool goal) => Assert.Equal(goal, RuleLogic.IsGoal(ph, pa, h, a));
+
+    [Theory]
+    [InlineData("{score}", 1, 0, 0, 0, "1 - 0")] [InlineData("{before}", 1, 0, 0, 0, "0 - 0")]
+    [InlineData("{home+1}", 1, 0, 0, 0, "2 - 0")] [InlineData("{away+1}", 1, 0, 0, 0, "1 - 1")] [InlineData("Any Other Home Win", 3, 0, 2, 0, "Any Other Home Win")]
+    public void Tokens(string text, int h, int a, int ph, int pa, string expected) => Assert.Equal(expected, RuleLogic.Expand(text, h, a, ph, pa));
+
+    [Fact] public void ScoreFormatsAreTheSameSelection() { Assert.Equal(RuleLogic.Norm("1 - 0"), RuleLogic.Norm("1-0")); Assert.Equal(RuleLogic.Norm("1 - 0"), RuleLogic.Norm("1 – 0")); Assert.Equal(RuleLogic.Norm("ANY other  home win"), RuleLogic.Norm("Any Other Home Win")); }
+
+    [Fact] public void LaysTheScoreThatJustHappened() => Assert.Equal(new long[] { 2 }, RuleLogic.Pick(CorrectScore, "{score}", 1, 0, 0, 0));
+    [Fact] public void CanListSeveralSelections() => Assert.Equal(new long[] { 5, 4 }.OrderBy(x => x), RuleLogic.Pick(CorrectScore, "{home+1}; {away+1}", 1, 0, 0, 0).OrderBy(x => x));
+    [Fact] public void StarMeansEverySelection() => Assert.Equal(6, RuleLogic.Pick(CorrectScore, "*", 1, 0, 0, 0).Count);
+    [Fact] public void UnknownNamesMatchNothing() => Assert.Empty(RuleLogic.Pick(CorrectScore, "9 - 9", 1, 0, 0, 0));
+    [Fact] public void ExactNameWorks() => Assert.Equal(new long[] { 6 }, RuleLogic.Pick(CorrectScore, "any other home win", 1, 0, 0, 0));
+
+    [Theory]
+    [InlineData("Correct Score", "correct score", true)] [InlineData("Over/Under 2.5 Goals", "Over/Under", true)] [InlineData("Match Odds", "Correct Score", false)] [InlineData("Match Odds", "", false)]
+    public void MarketNames(string market, string contains, bool expected) => Assert.Equal(expected, RuleLogic.MarketMatches(market, contains));
+
+    [Fact]
+    public void DescribesARuleInPlainWords()
+    {
+        var r = new AutomationRule { Side = "LAY", Amount = 5, Selections = "{score}", MarketContains = "Correct Score", Scope = "FAVORITES" };
+        Assert.Equal("On a goal in favorite matches and competitions: lay 5 on {score} in \"Correct Score\" markets", RuleLogic.Describe(r));
+        Assert.NotEqual(r.Id, r.Clone().Id);
+    }
+}

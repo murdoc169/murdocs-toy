@@ -62,7 +62,10 @@ sealed class ClassicMainForm : Form
         Controls.Add(nav); Controls.Add(_info);
 
         _tree.ImageList = _images;
-        _info.Paint += PaintInfo; _sportHead.Paint += PaintSportHead; _filters.Paint += PaintFilters;
+        _info.Paint += PaintInfo;
+        _info.MouseUp += (_, e) => { if (e.Button == MouseButtons.Right) InfoMenu(e.Location); else if (e.Button == MouseButtons.Left && _rulesBadge.Contains(e.Location)) OpenSettings("Automation rules"); };
+        _host.Rules.Changed += () => { if (!IsDisposed && IsHandleCreated) BeginInvoke(() => _info.Invalidate()); };
+        new ToolTip { InitialDelay = 400, AutoPopDelay = 20000 }.SetToolTip(_info, "Right-click for settings and automation rules."); _sportHead.Paint += PaintSportHead; _filters.Paint += PaintFilters;
         _sportHead.MouseDown += (_, e) => SportMenu(e.Location);
         _filters.MouseDown += FilterClick;
         _tree.DrawNode += DrawNode;
@@ -102,7 +105,10 @@ sealed class ClassicMainForm : Form
             _scoreTimer.Start(); _volTimer.Start(); _keepAlive.Start();
             _ = LoadAccount();
             await LoadTree();
+            // test seams only (not features): MT_TEST_ARM_RULES=1 turns the rules ON without the dialog; MT_OPEN_SETTINGS=<tab> opens Settings
+            if (Environment.GetEnvironmentVariable("MT_TEST_ARM_RULES") == "1") _host.Rules.Arm();
             if (_smoke || _openLadder) await OpenFirstLadder();
+            if (Environment.GetEnvironmentVariable("MT_OPEN_SETTINGS") is { Length: > 0 } tab) BeginInvoke(() => OpenSettings(tab));
         }
         catch (Exception ex) { _status.Text = ex.Message; if (_smoke) _host.Smoke("FAIL " + ex.Message, 1); }
     }
@@ -133,7 +139,13 @@ sealed class ClassicMainForm : Form
         int x = 6;
         if (_currencyFlag != "" && Flags.Get(_currencyFlag) != null) { g.DrawImage(Flags.Icon(_currencyFlag, new Size(16, 12)), x, 6); x += 22; }
         TextRenderer.DrawText(g, _balance, Cl.Name, new Point(x, 4), Color.Black);
-        var who = _opt.RelayUrl == "" ? "" : "";
+        _rulesBadge = Rectangle.Empty;
+        if (_host.Rules.Armed)
+        {
+            _rulesBadge = new Rectangle(_info.Width / 2 - 70, 3, 76, 18);
+            g.FillRectangle(Brushes.Firebrick, _rulesBadge);
+            TextRenderer.DrawText(g, "RULES ON", Cl.UiBold, _rulesBadge, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        }
         var right = _host.LiveText != "" ? _host.LiveText : "";
         var sz = TextRenderer.MeasureText(right, Cl.UiBold);
         TextRenderer.DrawText(g, right, Cl.UiBold, new Point(_info.Width - sz.Width - 6, 5), _host.LiveColour);
@@ -204,10 +216,31 @@ sealed class ClassicMainForm : Form
         menu.Show(_sportHead, new Point(0, _sportHead.Height));
     }
 
+    Rectangle _rulesBadge;
+
+    void OpenSettings(string tab = "General")
+    {
+        using var f = new SettingsForm(_host, tab);
+        f.ShowDialog(this);
+        _info.Invalidate();
+    }
+
+    /// <summary>Right-click on the balance bar.</summary>
+    void InfoMenu(Point at)
+    {
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Settings...", null, (_, _) => OpenSettings());
+        menu.Items.Add(_host.Rules.Armed ? "Automation rules... (ON)" : "Automation rules...", null, (_, _) => OpenSettings("Automation rules"));
+        menu.Items.Add(new ToolStripSeparator());
+        if (_host.Web != null) menu.Items.Add($"Open web mirror ({_host.Web.Url})", null, (_, _) => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(_host.Web.Url) { UseShellExecute = true }));
+        menu.Items.Add("Forget saved login", null, (_, _) => { LoginStore.Forget(); _status.Text = "Saved password removed."; });
+        menu.Show(_info, at);
+    }
+
     void ShowHelpMenu()
     {
         var menu = new ContextMenuStrip();
-        menu.Items.Add("Options...", null, (_, _) => { using var f = new OptionsForm(_opt); if (f.ShowDialog(this) == DialogResult.OK) { _opt.Save(); _host.StartScores(); } });
+        menu.Items.Add("Settings...", null, (_, _) => OpenSettings());
         if (_host.Web != null) menu.Items.Add($"Open web mirror ({_host.Web.Url})", null, (_, _) => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(_host.Web.Url) { UseShellExecute = true }));
         var auto = new ToolStripMenuItem("Auto-open favorites on score change") { Checked = _opt.AutoOpenOnScore, CheckOnClick = true };
         auto.CheckedChanged += (_, _) => { _opt.AutoOpenOnScore = auto.Checked; _opt.Save(); };

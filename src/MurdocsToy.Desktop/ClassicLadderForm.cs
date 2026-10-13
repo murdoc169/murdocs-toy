@@ -52,6 +52,7 @@ sealed partial class ClassicLadderForm : Form
         MinimumSize = new Size(Math.Min(900, 120 * n + 300), 520);
         StartPosition = FormStartPosition.CenterParent;
         Theme.TitleBar(this, Cl.BarTop, Color.White);
+        TopMost = Opt.AlwaysOnTop;
 
         _grid.ColumnCount = n;
         foreach (var r in runners)

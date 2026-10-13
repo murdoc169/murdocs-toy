@@ -13,6 +13,7 @@ sealed class AppHost : IDisposable
     public bool Privacy { get; }
     public string UiMode { get; }
     public LiveScoreFeed Scores { get; } = new();
+    public RuleEngine Rules { get; }
     public WebMirror? Web { get; private set; }
     public List<EventType> Types { get; set; } = new();
     public Dictionary<string, double> Volumes { get; } = new();
@@ -35,7 +36,8 @@ sealed class AppHost : IDisposable
     public AppHost(BetfairClient bf, Options opt, bool privacy, string uiMode, Control ui)
     {
         Bf = bf; Opt = opt; Privacy = privacy; UiMode = uiMode; _ui = ui;
-        Scores.ScoreChanged += (m, ph, pa) => OnUi(() => OnScoreChanged(m, ph, pa));
+        Rules = new RuleEngine(this);
+        Scores.ScoreChanged += (m, ph, pa) => OnUi(() => { Rules.OnScoreChanged(m, ph, pa); OnScoreChanged(m, ph, pa); });
         Scores.Alert += a => OnUi(() => { Status?.Invoke(a.Text); AlertReceived?.Invoke(a); });
     }
 
@@ -73,6 +75,8 @@ sealed class AppHost : IDisposable
     public bool IsFavorite(string eventId) => Opt.Favorites.Any(f => f.EventId == eventId);
     public string FavoritesSignature => string.Join(",", Opt.Favorites.Select(f => f.EventId)) + "|" + string.Join(",", Opt.FavoriteCompetitions.Select(f => f.CompetitionId));
 
+    public void RaiseFavoritesChanged() => FavoritesChanged?.Invoke();
+
     public bool IsFavoriteCompetition(string competitionId) => Opt.FavoriteCompetitions.Any(f => f.CompetitionId == competitionId);
 
     public void ToggleFavoriteCompetition(CompetitionNode c, string sportId)
@@ -87,6 +91,11 @@ sealed class AppHost : IDisposable
 
     // matches of the favorite competitions, so a goal in any of them can open a ladder
     List<EventNode> _compEvents = new();
+    readonly Dictionary<string, MarketCatalogEntry> _open = new();
+    /// <summary>Matches in the starred competitions (refreshed every few minutes).</summary>
+    public IReadOnlyList<EventNode> CompetitionEvents => _compEvents;
+    /// <summary>Matches that currently have a ladder window open.</summary>
+    public IEnumerable<EventNode> OpenEvents => _open.Values.Where(m => m.Event != null).Select(m => new EventNode(m.Event!.Id, m.Event.Name, null, null, 0)).ToList();
     readonly System.Windows.Forms.Timer _compTimer = new() { Interval = 3 * 60 * 1000 };
 
     public async Task RefreshCompetitionEvents()
@@ -161,8 +170,8 @@ sealed class AppHost : IDisposable
             return;
         }
         var f = CreateLadder(market);
-        _ladders[market.MarketId] = f;
-        f.FormClosed += (_, _) => _ladders.Remove(market.MarketId);
+        _ladders[market.MarketId] = f; _open[market.MarketId] = market;
+        f.FormClosed += (_, _) => { _ladders.Remove(market.MarketId); _open.Remove(market.MarketId); };
         f.Show(owner);
         if (cardOnly && f is ClassicLadderForm c) c.StartAsCard();
     }
@@ -200,5 +209,5 @@ sealed class AppHost : IDisposable
         Environment.Exit(code);
     }
 
-    public void Dispose() { _compTimer.Stop(); Web?.Dispose(); Scores.Dispose(); }
+    public void Dispose() { Rules.Disarm("closing"); _compTimer.Stop(); Web?.Dispose(); Scores.Dispose(); }
 }
