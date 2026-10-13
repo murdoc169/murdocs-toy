@@ -112,10 +112,10 @@ sealed class AppHost : IDisposable
 
     public void StartFavoriteCompetitions() { _ = RefreshCompetitionEvents(); _compTimer.Tick += async (_, _) => await RefreshCompetitionEvents(); _compTimer.Start(); }
 
-    public void ToggleFavorite(EventNode ev)
+    public void ToggleFavorite(EventNode ev, string? sportId = null)
     {
         var list = Opt.Favorites.ToList();               // replaced as a whole: the web mirror may read it from another thread
-        if (list.RemoveAll(f => f.EventId == ev.Id) == 0) list.Add(new FavoriteEvent(ev.Id, ev.Name));
+        if (list.RemoveAll(f => f.EventId == ev.Id) == 0) list.Add(new FavoriteEvent(ev.Id, ev.Name, sportId));
         Opt.Favorites = list; Opt.Save();
         Say(IsFavorite(ev.Id) ? $"Added to favorites: {ev.Name}" : $"Removed from favorites: {ev.Name}");
         FavoritesChanged?.Invoke();

@@ -85,6 +85,14 @@ static class ClIcons
         g.FillRectangle(dark, 4, 4, 3, 8); g.FillRectangle(dark, 9, 4, 3, 8);
     });
 
+    /// <summary>A small chequered flag for race meetings.</summary>
+    public static Bitmap Race => Make("race", g =>
+    {
+        g.DrawLine(Pens.Black, 3, 2, 3, 14);
+        for (int r = 0; r < 4; r++) for (int c = 0; c < 5; c++) g.FillRectangle((r + c) % 2 == 0 ? Brushes.Black : Brushes.White, 4 + c * 2, 2 + r * 2, 2, 2);
+        g.DrawRectangle(Pens.Black, 4, 2, 10, 8);
+    });
+
     public static Bitmap Calendar => Make("cal", g =>
     {
         g.FillRectangle(Brushes.White, 2, 1, 12, 14); g.DrawRectangle(Pens.Black, 2, 1, 11, 13);

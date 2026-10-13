@@ -110,7 +110,7 @@ sealed class ClassicMainForm : Form
         try
         {
             _host.Types = await _bf.ListEventTypesAsync();
-            SportIndex = Math.Max(0, _host.Types.FindIndex(t => t.Name == "Soccer"));
+            SportIndex = Math.Max(0, _host.Types.FindIndex(t => t.Name == (Environment.GetEnvironmentVariable("MT_TEST_SPORT") is { Length: > 0 } sp ? sp : "Soccer")));   // MT_TEST_SPORT: test seam
             _host.StartScores(); _host.StartMirror(); _host.StartFavoriteCompetitions();
             _scoreTimer.Start(); _volTimer.Start(); _keepAlive.Start();
             _ = LoadAccount();
@@ -270,7 +270,7 @@ sealed class ClassicMainForm : Form
         }
         if (SelectedEvent() is not { } ev) return;
         var menu = new ContextMenuStrip();
-        menu.Items.Add(_host.IsFavorite(ev.Id) ? "Remove from favorites" : "Add to favorites", null, (_, _) => _host.ToggleFavorite(ev));
+        menu.Items.Add(_host.IsFavorite(ev.Id) ? "Remove from favorites" : "Add to favorites", null, (_, _) => _host.ToggleFavorite(ev, SportId));
         menu.Items.Add("Open ladder", null, async (_, _) => await OpenLadder());
         menu.Items.Add("Open card only", null, async (_, _) => await OpenLadder(cardOnly: true));
         menu.Show(_tree, at);
@@ -280,6 +280,7 @@ sealed class ClassicMainForm : Form
     {
         { Tag: EventNode e } => e,
         { Tag: MarketCatalogEntry, Parent.Tag: EventNode e } => e,
+        { Tag: MarketCatalogEntry, Parent.Tag: MarketCatalogEntry, Parent.Parent.Tag: EventNode e } => e,
         _ => null,
     };
 
@@ -306,7 +307,7 @@ sealed class ClassicMainForm : Form
             using (var g = Graphics.FromImage(bmp)) g.DrawImage(Flags.Icon(flagCode, new Size(16, 12)), 0, 2);
             _images.Images.Add(key, bmp);
         }
-        else _images.Images.Add(key, icon switch { "ball" => ClIcons.Ball, "pitch" => ClIcons.Pitch, "market" => ClIcons.Market, _ => new Bitmap(16, 16) });
+        else _images.Images.Add(key, icon switch { "ball" => ClIcons.Ball, "pitch" => ClIcons.Pitch, "race" => ClIcons.Race, "market" => ClIcons.Market, _ => new Bitmap(16, 16) });
         return key;
     }
 
@@ -354,26 +355,56 @@ sealed class ClassicMainForm : Form
         {
             _status.Text = "Loading...";
             _loads.Clear(); _tree.Nodes.Clear();
+            bool fellBack = false;
             if (_scope != Scope.Favorites)
             {
                 var (from, to) = Window();
-                var comps = await _bf.ListCompetitionsAsync(SportId, _scope == Scope.InPlay, from, to);
-                foreach (var grp in comps.GroupBy(c => Country(c).Name).OrderBy(g => g.Key == "International" ? "~" : g.Key))
+                bool built = await BuildTree(_scope == Scope.InPlay, from, to);
+                if (!built && _scope == Scope.InPlay)       // nothing live right now: show the day's schedule instead
                 {
-                    var flag = Country(grp.First()).Flag;
-                    var country = Node(grp.Key, "country", flag, "none");
-                    foreach (var c in grp.OrderBy(c => c.Name))
-                        country.Nodes.Add(WithPlaceholder(CompetitionTreeNode(c, SportId)));
-                    _tree.Nodes.Add(country);
+                    _scope = Scope.All; _filters.Invalidate();
+                    (from, to) = Window();
+                    fellBack = built = await BuildTree(false, from, to);
                 }
             }
             SyncFavorites();
             _ = RefreshVolumes();
             await AutoExpandRoots();
-            _status.Text = _tree.Nodes.Count <= 1 && _scope != Scope.Favorites ? (_scope == Scope.InPlay ? "Nothing in-play right now" : "Nothing found") : "";
+            _status.Text = fellBack ? "Nothing in-play right now: showing the schedule" : _tree.Nodes.Count <= 1 && _scope != Scope.Favorites ? "Nothing found" : "";
             RefreshLabels();
         }
         catch (Exception ex) { _status.Text = ex.Message; }
+    }
+
+    /// <summary>
+    /// Country > competition for team sports. Racing has no competitions (races sit under meeting events with a country), so
+    /// there it is country > meeting > race. Returns false when there is nothing to show.
+    /// </summary>
+    async Task<bool> BuildTree(bool inPlay, DateTime? from, DateTime? to)
+    {
+        var comps = await _bf.ListCompetitionsAsync(SportId, inPlay, from, to);
+        if (comps.Count > 0)
+        {
+            foreach (var grp in comps.GroupBy(c => Country(c).Name).OrderBy(g => g.Key == "International" ? "~" : g.Key))
+            {
+                var flag = Country(grp.First()).Flag;
+                var country = Node(grp.Key, "country", flag, "none");
+                foreach (var c in grp.OrderBy(c => c.Name)) country.Nodes.Add(WithPlaceholder(CompetitionTreeNode(c, SportId)));
+                _tree.Nodes.Add(country);
+            }
+            return true;
+        }
+        var meetings = await _bf.ListEventsAsync(SportId, null, null, inPlay, from, to);
+        if (meetings.Count == 0) return false;
+        var alpha3 = _iso3.GroupBy(kv => kv.Value).ToDictionary(g => g.Key, g => g.First().Key);       // alpha-2 -> alpha-3
+        foreach (var grp in meetings.GroupBy(e => (e.CountryCode ?? "").ToLowerInvariant()).OrderBy(g => g.Key == "" ? "~" : g.Key))
+        {
+            var name = grp.Key != "" && alpha3.TryGetValue(grp.Key, out var a3) && _countryNames.TryGetValue(a3, out var cn) ? cn : (grp.Key == "" ? "Other" : grp.Key.ToUpperInvariant());
+            var country = Node(name, "country", Flags.CodeFor(null, grp.Key == "" ? null : grp.Key, null), "none");
+            foreach (var e in grp.OrderBy(e => e.OpenDate).ThenBy(e => e.Name)) country.Nodes.Add(EventTreeNode(e, null, "race", plain: true));
+            _tree.Nodes.Add(country);
+        }
+        return true;
     }
 
     TreeNode CompetitionTreeNode(CompetitionNode c, string sportId, bool star = false)
@@ -383,8 +414,8 @@ sealed class ClassicMainForm : Form
         return n;
     }
 
-    TreeNode EventTreeNode(EventNode e, string? flag) =>
-        WithPlaceholder(Node(_host.EventLabel(e, null, withTime: true, shortTime: true), e, null, "pitch"));
+    TreeNode EventTreeNode(EventNode e, string? flag, string icon = "pitch", bool plain = false) =>
+        WithPlaceholder(Node(plain ? e.Name : _host.EventLabel(e, null, withTime: true, shortTime: true), e, null, icon));
 
 
     /// <summary>When a level has exactly one real choice, open it, and keep going down while each level has a single choice.</summary>
@@ -425,7 +456,20 @@ sealed class ClassicMainForm : Form
                 kids.AddRange((await _bf.ListEventsAsync(sport, c.Id, null, _scope == Scope.InPlay, from, to)).Select(e => EventTreeNode(e, null)));
             }
             else if (n.Tag is EventNode e)
-                foreach (var m in await _bf.ListEventMarketsAsync(e.Id)) kids.Add(Node(m.MarketName, m, null, "market"));
+            {
+                var markets = await _bf.ListEventMarketsAsync(e.Id);
+                bool racing = markets.Any(m => m.EventType?.Name is "Horse Racing" or "Greyhound Racing");
+                if (!racing) foreach (var m in markets) kids.Add(Node(m.MarketName, m, null, "market"));
+                else
+                    // one node per race (its time and name); the race's other markets (To Be Placed, Each Way...) sit inside it
+                    foreach (var race in markets.Where(m => m.MarketStartTime != null).GroupBy(m => m.MarketStartTime).OrderBy(g => g.Key))
+                    {
+                        var main = race.FirstOrDefault(m => !RaceSideMarket(m.MarketName)) ?? race.First();
+                        var node = Node($"{race.Key!.Value.ToLocalTime():HH:mm}  {main.MarketName}", main, null, "race");
+                        foreach (var side in race.Where(m => m != main).OrderBy(m => m.MarketName)) node.Nodes.Add(Node(side.MarketName, side, null, "market"));
+                        kids.Add(node);
+                    }
+            }
             n.Nodes.Clear();
             foreach (var k in kids) n.Nodes.Add(k);
             if (n.Tag is CompetitionNode) _ = RefreshVolumes();
@@ -434,6 +478,12 @@ sealed class ClassicMainForm : Form
         }
         catch (Exception ex) { _status.Text = ex.Message; n.Nodes.Clear(); WithPlaceholder(n); _loads.Remove(n); }
     }
+
+    /// <summary>The markets that sit beside a race's main (win) market.</summary>
+    static bool RaceSideMarket(string name) =>
+        name.StartsWith("To Be Placed", StringComparison.OrdinalIgnoreCase) || name.StartsWith("Each Way", StringComparison.OrdinalIgnoreCase) ||
+        name.StartsWith("Match Bet", StringComparison.OrdinalIgnoreCase) || name.StartsWith("Without", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("Forecast", StringComparison.OrdinalIgnoreCase) || name.Contains("Place", StringComparison.OrdinalIgnoreCase) && !name.Contains(' ') ;
 
     IEnumerable<TreeNode> EventNodes(TreeNodeCollection nodes)
     {
@@ -450,11 +500,13 @@ sealed class ClassicMainForm : Form
         var old = _tree.Nodes.Cast<TreeNode>().FirstOrDefault(x => x.Tag is string t && t == "favorites");
         bool wasOpen = old?.IsExpanded ?? true;
         old?.Remove();
-        var root = Node($"★ Favorites ({_opt.Favorites.Count + _opt.FavoriteCompetitions.Count})", "favorites", null, "none", bold: true);
-        foreach (var fc in _opt.FavoriteCompetitions)
+        var comps = _opt.FavoriteCompetitions.Where(c => c.SportId == SportId).ToList();      // favourites belong to the sport shown
+        var events = _opt.Favorites.Where(f => (f.SportId ?? "1") == SportId).ToList();
+        var root = Node($"★ Favorites ({events.Count + comps.Count})", "favorites", null, "none", bold: true);
+        foreach (var fc in comps)
             root.Nodes.Add(WithPlaceholder(CompetitionTreeNode(new CompetitionNode(fc.CompetitionId, fc.Name, fc.Region, 0), fc.SportId, star: true)));
-        foreach (var f in _opt.Favorites) root.Nodes.Add(EventTreeNode(new EventNode(f.EventId, f.Name, null, null, 0), null));
-        if (_opt.Favorites.Count == 0 && _opt.FavoriteCompetitions.Count == 0) root.Nodes.Add(Node("(right-click a match or competition > Add to favorites)", "hint", null, "none"));
+        foreach (var f in events) root.Nodes.Add(EventTreeNode(new EventNode(f.EventId, f.Name, null, null, 0), null));
+        if (events.Count == 0 && comps.Count == 0) root.Nodes.Add(Node("(right-click a match or competition > Add to favorites)", "hint", null, "none"));
         _tree.Nodes.Insert(0, root);
         if (wasOpen) root.Expand();
         RefreshLabels();
@@ -475,6 +527,7 @@ sealed class ClassicMainForm : Form
         foreach (var n in EventNodes(_tree.Nodes))
         {
             var e = (EventNode)n.Tag!;
+            if (n.ImageKey == "race") continue;          // a race meeting is just its name
             var m = _host.Scores.Url == null ? null : _host.Scores.Find(e.Name);
             var text = _host.EventLabel(e, m, withTime: true, shortTime: true);
             if (n.Text != text) n.Text = text;
@@ -516,9 +569,9 @@ sealed class ClassicMainForm : Form
         if (node == null) return;
         node.Expand();
         var comp = node.Nodes.Cast<TreeNode>().FirstOrDefault(x => x.Tag is CompetitionNode);
-        if (comp == null) return;
-        comp.Expand(); await ExpandLoad(comp);
-        var evNode = comp.Nodes.Cast<TreeNode>().FirstOrDefault(x => x.Tag is EventNode);
+        TreeNode? evNode;
+        if (comp != null) { comp.Expand(); await ExpandLoad(comp); evNode = comp.Nodes.Cast<TreeNode>().FirstOrDefault(x => x.Tag is EventNode); }
+        else evNode = node.Nodes.Cast<TreeNode>().FirstOrDefault(x => x.Tag is EventNode);      // racing: meetings sit directly under the country
         if (evNode == null) return;
         evNode.Expand(); await ExpandLoad(evNode);
         _tree.SelectedNode = evNode;

@@ -4,7 +4,8 @@ using System.Text.Json;
 namespace MurdocsToy.Desktop;
 
 /// <summary>A match the user starred.</summary>
-public record FavoriteEvent(string EventId, string Name);
+/// <summary>SportId is empty on favorites saved before sports were told apart: those were all football.</summary>
+public record FavoriteEvent(string EventId, string Name, string? SportId = null);
 
 /// <summary>A competition the user starred (e.g. AFC Champions League, Primeira Liga); its matches count as favorites.</summary>
 public record FavoriteCompetition(string CompetitionId, string Name, string SportId, string? Region);

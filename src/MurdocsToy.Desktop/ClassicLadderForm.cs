@@ -48,8 +48,9 @@ sealed partial class ClassicLadderForm : Form
         Text = Title(null);
         var runners = (market.Runners ?? new()).OrderBy(r => r.SortPriority ?? 0).ToList();
         int n = Math.Max(1, runners.Count);
-        ClientSize = new Size(Math.Min(Screen.PrimaryScreen!.WorkingArea.Width - 40, n * 340 + 300), Math.Min(Screen.PrimaryScreen!.WorkingArea.Height - 80, 940));
-        MinimumSize = new Size(Math.Min(900, 120 * n + 300), 520);
+        int shown = Math.Min(n, 4), each = n > 3 ? 270 : 340;      // a big field (a race) opens with its four favourites, so the window does not need to be wide
+        ClientSize = new Size(Math.Min(Screen.PrimaryScreen!.WorkingArea.Width - 40, shown * each + 300), Math.Min(Screen.PrimaryScreen!.WorkingArea.Height - 80, 940));
+        MinimumSize = new Size(Math.Min(900, 120 * shown + 300), 520);
         StartPosition = FormStartPosition.CenterParent;
         Theme.TitleBar(this, Cl.BarTop, Color.White);
         TopMost = Opt.AlwaysOnTop;
@@ -230,6 +231,21 @@ sealed partial class ClassicLadderForm : Form
         menu.Show(Cursor.Position);
     }
 
+    bool _trimmed;
+
+    /// <summary>A race can have 20 runners: start with the four shortest prices and let the user tick more in the Ladder Selector.</summary>
+    void ShowFavouritesOnly()
+    {
+        if (_trimmed || _ladders.Count <= 4 || _book?.Runners == null) return;
+        var order = _book.Runners.Where(r => r.Status == "ACTIVE")
+            .OrderBy(r => r.LastPriceTraded ?? r.Ex?.AvailableToBack?.FirstOrDefault()?.Price ?? 1000).Take(4).Select(r => r.SelectionId).ToHashSet();
+        if (order.Count == 0) return;
+        _trimmed = true;
+        for (int i = 0; i < _ladders.Count; i++) _selector.SetItemChecked(i, order.Contains(_ladders[i].Info.SelectionId));
+        ApplyLadderSelection();
+        SetMsg($"Showing the 4 favourites of {_ladders.Count} runners. Tick more in the Ladder Selector.");
+    }
+
     void ApplyLadderSelection()
     {
         for (int i = 0; i < _ladders.Count; i++) _ladders[i].Ladder.Visible = _selector.GetItemChecked(i);
@@ -262,6 +278,7 @@ sealed partial class ClassicLadderForm : Form
             foreach (var (info, ladder) in _ladders)
                 ladder.SetData(_book?.Runners?.FirstOrDefault(r => r.SelectionId == info.SelectionId),
                     _orders.Where(o => o.SelectionId == info.SelectionId).ToList(), Opt.AutoCentre);
+            ShowFavouritesOnly();
             UpdateTools();
             AutoWatch();
             if (_card != null && _card.Visible) _card.SetData(BuildCardData());
