@@ -1,4 +1,4 @@
-namespace OpenLadder.Core;
+namespace MurdocsToy.Core;
 
 /// <summary>Betfair price increments (tick ladder).</summary>
 public static class PriceLadder

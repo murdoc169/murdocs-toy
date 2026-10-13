@@ -1,6 +1,6 @@
-using OpenLadder.Core;
+using MurdocsToy.Core;
 
-namespace OpenLadder.Desktop;
+namespace MurdocsToy.Desktop;
 
 sealed class MainForm : Form
 {
@@ -41,7 +41,7 @@ sealed class MainForm : Form
     public MainForm(BetfairClient bf, bool smoke)
     {
         _bf = bf; _smoke = smoke;
-        Text = "OpenLadder";
+        Text = "Murdoc's Toy";
         Size = new Size(1200, 780);
         StartPosition = FormStartPosition.CenterScreen;
 

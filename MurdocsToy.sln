@@ -5,13 +5,13 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{09FF95CC-AABD-4E8E-B0DC-9E104340A2F3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenLadder.Core", "src\OpenLadder.Core\OpenLadder.Core.csproj", "{5E2C34A6-FB77-4FED-B273-079FA86B3A9A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MurdocsToy.Core", "src\MurdocsToy.Core\MurdocsToy.Core.csproj", "{5E2C34A6-FB77-4FED-B273-079FA86B3A9A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenLadder.Desktop", "src\OpenLadder.Desktop\OpenLadder.Desktop.csproj", "{16984C60-10AA-4343-B0E6-BD0FD8259996}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MurdocsToy.Desktop", "src\MurdocsToy.Desktop\MurdocsToy.Desktop.csproj", "{16984C60-10AA-4343-B0E6-BD0FD8259996}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{3262D82A-210E-4E6D-8173-E49430F3D85B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenLadder.Tests", "tests\OpenLadder.Tests\OpenLadder.Tests.csproj", "{3290C762-D31D-4823-89BA-D63AFCA1D25A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MurdocsToy.Tests", "tests\MurdocsToy.Tests\MurdocsToy.Tests.csproj", "{3290C762-D31D-4823-89BA-D63AFCA1D25A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

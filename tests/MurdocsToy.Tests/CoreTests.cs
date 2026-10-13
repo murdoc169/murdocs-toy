@@ -1,4 +1,4 @@
-using OpenLadder.Core;
+using MurdocsToy.Core;
 using Xunit;
 
 public class LadderTests

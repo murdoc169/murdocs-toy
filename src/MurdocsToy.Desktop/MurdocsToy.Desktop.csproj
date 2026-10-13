@@ -7,6 +7,6 @@
     <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\OpenLadder.Core\OpenLadder.Core.csproj" />
+    <ProjectReference Include="..\MurdocsToy.Core\MurdocsToy.Core.csproj" />
   </ItemGroup>
 </Project>

@@ -57,5 +57,5 @@ export function createServer(appKey = process.env.BETFAIR_APP_KEY) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT ?? 8080);
   if (!process.env.BETFAIR_APP_KEY) { console.error('Set BETFAIR_APP_KEY (and optionally BETFAIR_USERNAME / BETFAIR_PASSWORD).'); process.exit(1); }
-  createServer().listen(port, '127.0.0.1', () => console.log(`OpenLadder web UI: http://127.0.0.1:${port}`));
+  createServer().listen(port, '127.0.0.1', () => console.log(`MurdocsToy web UI: http://127.0.0.1:${port}`));
 }

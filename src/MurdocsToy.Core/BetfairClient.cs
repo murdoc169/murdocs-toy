@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace OpenLadder.Core;
+namespace MurdocsToy.Core;
 
 /// <summary>Minimal client for the public Betfair Exchange API-NG (interactive login + JSON-RPC).</summary>
 public sealed class BetfairClient : IDisposable

@@ -1,8 +1,8 @@
-# OpenLadder
+# Murdoc's Toy
 
 An open-source Betfair Exchange trading client with two front ends:
 
-- **Desktop** (`src/OpenLadder.Desktop`) – C# / WinForms: market browser, runner grid with 3-deep back/lay, price ladder with click-to-bet, current orders, balance.
+- **Desktop** (`src/MurdocsToy.Desktop`) – C# / WinForms: market browser, runner grid with 3-deep back/lay, price ladder with click-to-bet, current orders, balance.
 - **Web** (`web/`) – dependency-free Node server plus a dark single-page UI with the same features and a cleaner layout.
 
 Both use only Betfair's public, documented [Exchange API-NG](https://betfair-developer-docs.atlassian.net/wiki/spaces/1smk3cen4v3lu3yomq5qye0ni/overview). This is an independent, clean-room project. It contains no code from any commercial trading product and is not affiliated with Betfair.
@@ -30,7 +30,7 @@ BETFAIR_APP_KEY=...
 cd web && node server.mjs
 
 # desktop UI (Windows)
-dotnet run --project src/OpenLadder.Desktop
+dotnet run --project src/MurdocsToy.Desktop
 ```
 
 ## Test

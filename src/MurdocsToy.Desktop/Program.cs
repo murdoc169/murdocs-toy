@@ -1,6 +1,6 @@
-using OpenLadder.Core;
+using MurdocsToy.Core;
 
-namespace OpenLadder.Desktop;
+namespace MurdocsToy.Desktop;
 
 static class Program
 {
@@ -26,7 +26,7 @@ sealed class LoginForm : Form
 
     public LoginForm(bool autoLogin = false)
     {
-        Text = "OpenLadder - Betfair login";
+        Text = "Murdoc's Toy - Betfair login";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;

@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace OpenLadder.Core;
+namespace MurdocsToy.Core;
 
 public record EventType(string Id, string Name);
 public record EventInfo(string Id, string Name, string? CountryCode, DateTime? OpenDate);
