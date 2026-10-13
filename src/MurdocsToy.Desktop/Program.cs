@@ -15,7 +15,7 @@ static class Program
         bool auto = args.Contains("--smoke") || args.Contains("--autologin");
         string ui = (args.FirstOrDefault(a => a.StartsWith("--ui="))?[5..]) switch
         {
-            "classic" => Ui.Classic, "light" => Ui.ModernLight, "dark" => Ui.ModernDark, _ => LoginStore.Load().Ui ?? Ui.Classic,
+            "classic" => Ui.Classic, "light" => Ui.ModernLight, "dark" => Ui.ModernDark, _ => LoginStore.Load().Ui ?? Ui.ModernDark,
         };
         Theme.Dark = ui == Ui.ModernDark;
         using var login = new LoginForm(auto, ui, args.Contains("--show-login"));
@@ -36,16 +36,29 @@ static class Program
 /// </summary>
 static class LoginStore
 {
-    public record Saved(string? Username, string? AppKey, string? PasswordProtected, bool Remember = true, string? Ui = null);
+    public record Saved(string? Username, string? AppKey, string? PasswordProtected, bool Remember = true, string? Ui = null, bool ClassicMigrated = false);
 
     static string PathFile => Profile.File("settings.json");
     static readonly byte[] Entropy = Encoding.UTF8.GetBytes("MurdocsToy.login.v1");
 
     public static Saved Load()
     {
-        try { return JsonSerializer.Deserialize<Saved>(File.ReadAllText(PathFile)) ?? new(null, null, null); }
-        catch { return new(null, null, null); }
+        try
+        {
+            var s = JsonSerializer.Deserialize<Saved>(File.ReadAllText(PathFile)) ?? new(null, null, null);
+            // Classic was the default and is now deprecated: move a saved Classic choice to Modern once. Choosing Classic again sticks.
+            if (!s.ClassicMigrated)
+            {
+                s = s with { ClassicMigrated = true, Ui = s.Ui == Ui_.Classic ? Ui_.ModernDark : s.Ui };
+                try { File.WriteAllText(PathFile, JsonSerializer.Serialize(s)); } catch { }
+            }
+            return s;
+        }
+        catch { return new(null, null, null, ClassicMigrated: true); }
     }
+
+    // the Ui constants (the class named Ui is shadowed by the record's Ui property inside this type)
+    static class Ui_ { public const string Classic = MurdocsToy.Desktop.Ui.Classic, ModernDark = MurdocsToy.Desktop.Ui.ModernDark; }
 
     public static string? Password(Saved s)
     {
@@ -62,7 +75,7 @@ static class LoginStore
             string? protectedPw = rememberPassword
                 ? Convert.ToBase64String(ProtectedData.Protect(Encoding.UTF8.GetBytes(password), Entropy, DataProtectionScope.CurrentUser))
                 : null;
-            File.WriteAllText(PathFile, JsonSerializer.Serialize(new Saved(username, appKey, protectedPw, rememberPassword, ui)));
+            File.WriteAllText(PathFile, JsonSerializer.Serialize(new Saved(username, appKey, protectedPw, rememberPassword, ui, true)));
         }
         catch { /* remembering is optional */ }
     }
@@ -71,6 +84,6 @@ static class LoginStore
     public static void Forget()
     {
         var s = Load();
-        try { File.WriteAllText(PathFile, JsonSerializer.Serialize(new Saved(s.Username, s.AppKey, null, false, s.Ui))); } catch { }
+        try { File.WriteAllText(PathFile, JsonSerializer.Serialize(new Saved(s.Username, s.AppKey, null, false, s.Ui, true))); } catch { }
     }
 }

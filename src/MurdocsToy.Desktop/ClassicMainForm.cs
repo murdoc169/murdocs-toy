@@ -4,7 +4,7 @@ using MurdocsToy.Core;
 namespace MurdocsToy.Desktop;
 
 /// <summary>
-/// The Classic main window: a narrow navigator (balance row, sport header, Today/All filters, country > competition > match > market
+/// DEPRECATED (kept for now, no new features; Modern is the default). The Classic main window: a narrow navigator (balance row, sport header, Today/All filters, country > competition > match > market
 /// tree with flags). Double-click a match to open its ladders.
 /// </summary>
 sealed class ClassicMainForm : Form
@@ -72,6 +72,7 @@ sealed class ClassicMainForm : Form
         _tree.NodeMouseClick += (_, e) => { if (e.Button == MouseButtons.Right) { _tree.SelectedNode = e.Node; NodeMenu(e.Node, e.Location); } };
 
         _host.Status += s => _status.Text = s;
+        _status.Text = "The Classic view is deprecated: Modern is the default now.";
         _host.FavoritesChanged += SyncFavorites;
         _scoreTimer.Tick += (_, _) => RefreshLabels();
         _volTimer.Tick += async (_, _) => await RefreshVolumes();

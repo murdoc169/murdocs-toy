@@ -5,8 +5,9 @@ namespace MurdocsToy.Desktop;
 /// <summary>A plain three-way switch for the interface: Classic | Modern dark | Modern light.</summary>
 sealed class InterfacePicker : Control
 {
-    public string Value { get; set; } = Ui.Classic;
-    static readonly (string Ui, string Label)[] Items = { (Ui.Classic, "Classic"), (Ui.ModernDark, "Modern dark"), (Ui.ModernLight, "Modern light") };
+    public string Value { get; set; } = Ui.ModernDark;
+    static readonly (string Ui, string Label)[] Items = { (Ui.ModernDark, "Modern dark"), (Ui.ModernLight, "Modern light"), (Ui.Classic, "Classic (deprecated)") };
+    static readonly int[] Weight = { 3, 3, 4 };   // the last label is longer
 
     public InterfacePicker()
     {
@@ -14,7 +15,7 @@ sealed class InterfacePicker : Control
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
     }
 
-    Rectangle Segment(int i) { int w = Width / Items.Length; return new Rectangle(i * w, 0, w, Height - 1); }
+    Rectangle Segment(int i) { int total = Weight.Sum(), x = Width * Weight.Take(i).Sum() / total; return new Rectangle(x, 0, Width * Weight[i] / total, Height - 1); }
 
     protected override void OnMouseDown(MouseEventArgs e) { for (int i = 0; i < Items.Length; i++) if (Segment(i).Contains(e.Location)) { Value = Items[i].Ui; Focus(); Invalidate(); } }
 
@@ -36,7 +37,7 @@ sealed class InterfacePicker : Control
             var r = Segment(i); bool on = Items[i].Ui == Value;
             using (var b = new SolidBrush(on ? Color.FromArgb(52, 60, 74) : Color.FromArgb(28, 33, 41))) g.FillRectangle(b, r);
             using (var p = new Pen(Color.FromArgb(52, 60, 74))) g.DrawRectangle(p, r);
-            TextRenderer.DrawText(g, Items[i].Label, new Font("Segoe UI", 9f), r, on ? Color.White : Color.FromArgb(150, 158, 170),
+            TextRenderer.DrawText(g, Items[i].Label, new Font("Segoe UI", 8.5f), r, on ? Color.White : Color.FromArgb(150, 158, 170),
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
         }
     }
